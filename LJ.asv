@@ -33,11 +33,11 @@ C.hydrationlayer=2.5e-10;
 
 P.pdf=1;
 P.ssf=1;
-P.dens=0;
-P.equipartition=0;
+P.dens=1;
+P.equipartition=1;
 P.cluster=0;
 P.exvol=0;
-P.correctionwindow=0; % window of the correction; 0 = no correction, 1e6 = S.rc, any other value X=X*S.rp;
+P.correctionwindow=2; % window of the correction; 0 = no correction, 1e6 = S.rc, any other value X=X*S.rp;
 P.convergencemode=1; % 1  by step numbers, 2 by coll numbers, 3 by coll rates convergence
 P.pdfbins=[180,90]; % number of bins for azimuth, elevation
 P.pdfthermints=10; % interval of steps between snapshots of pdfs to ascertain thermalization
@@ -725,24 +725,24 @@ for ic=1 % loop over conditions
             
             % --- SAVING TEMP FILE ---
             if (qs<1e4 && mod(log2(qs),1)==0) || mod(qs,1e4)==0
-                save([output_folder,'\',tempfilename],'C','EDGES','P','V','S','-v7.3')
+                save(tempfilename,'C','EDGES','P','V','S','-v7.3')
                 if P.pdf==1
-                    save([output_folder,'\',tempfilename],'PDFT','PDF','-append')
+                    save(tempfilename,'PDFT','PDF','-append')
                 end
                 if P.ssf==1
-                    save([output_folder,'\',tempfilename],'SSF','-append')
+                    save(tempfilename,'SSF','-append')
                 end
                 if P.cluster==1
-                    save([output_folder,'\',tempfilename],'CLUSTERS','DEGREES','-append')
+                    save(tempfilename,'CLUSTERS','DEGREES','-append')
                 end
                 if P.dens==1
-                    save([output_folder,'\',tempfilename],'DCOMP','-append')
+                    save(tempfilename,'DCOMP','-append')
                 end
                 if P.equipartition==1
-                    save([output_folder,'\',tempfilename],'EQUIP','-append')
+                    save(tempfilename,'EQUIP','-append')
                 end
                 if P.exvol==1
-                    save([output_folder,'\',tempfilename],'AV','-append')
+                    save(tempfilename,'AV','-append')
                 end
             end
             % ---
@@ -751,22 +751,22 @@ for ic=1 % loop over conditions
     end
     save([output_folder,'\',filename],'C','EDGES','P','V','S','-v7.3')
     if P.pdf==1
-        save([output_folder,'\',filename],'PDFT','DS','PDF','-append')
+        save(filename,'PDFT','DS','PDF','-append')
     end
     if P.ssf==1
-        save([output_folder,'\',filename],'SSF','-append')
+        save(filename,'SSF','-append')
     end
     if P.cluster==1
-        save([output_folder,'\',filename],'CLUSTERS','DEGREES','-append')
+        save(filename,'CLUSTERS','DEGREES','-append')
     end
     if P.dens==1
-        save([output_folder,'\',filename],'DCOMP','-append')
+        save(filename,'DCOMP','-append')
     end
     if P.equipartition==1
-        save([output_folder,'\',filename],'EQUIP','-append')
+        save(filename,'EQUIP','-append')
     end
     if P.exvol==1
-        save([output_folder,'\',filename],'AV','-append')
+        save(filename,'AV','-append')
     end
     if isfile(tempfilename)
         delete(tempfilename);
