@@ -89,7 +89,7 @@ GPMAT=ghostparticlematrix();
 
 %% SIMULATION EXECUTION
 
-for ic=19:24 % loop over conditions
+for ic=25:30 % loop over conditions
     
     if CONDS.alpha(ic,1)==0
         continue
@@ -286,6 +286,7 @@ for ic=19:24 % loop over conditions
 
         % ---- CALCULATION OF DISPLACEMENT LIBRARIES ----
         DISP=normrnd(0,S.stdx,P.nodisp,3);
+        DISP=DISP-mean(DISP,1);
         % ----
 
         % --- MONTECARLO CLAMP DETERMINATION ---

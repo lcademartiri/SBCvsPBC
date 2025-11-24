@@ -7,14 +7,18 @@ warning('off', 'all');
 
 %% SERIES NAME
 
-filenamecollisionseries='SBCvsPBCtest_temp_%d.mat';
+output_folder='D:\OneDrive - Università degli Studi di Parma\Manuel Dedola\outlines\spherical boundary conditions for brownian dynamics simulations\submissions\JChemPhys\revision\code\freeghost_nocorr';
+data_folder = 'D:\GoogleDrive\LCL\Ludovico Cademartiri\Work\projects\ARBD\database';
+addpath(output_folder)
+addpath(data_folder)
+filenamecollisionseries='SBCvsPBC_temp_%d.mat';
 plottingenabled=1;
 
 %% ANALYSIS
 
 conditionstoprocess=[];
 
-for ic=355:390
+for ic=1:30
     filename=sprintf(filenamecollisionseries,ic);
     if exist(filename,'file')>0
         conditionstoprocess=[conditionstoprocess,ic];
@@ -24,7 +28,7 @@ end
 for ic=conditionstoprocess
     clearvars -except ISO conditionstoprocess ic filenamecollisionseries plottingenabled
     filename=sprintf(filenamecollisionseries,ic);
-    load(filename,'C','P','V','S','EDGES','PDFT','SSF','DCOMP','DS','H','pdfedges','ASYMCORR','EQUIP')
+    load(filename,'C','P','V','S','EDGES','PDFT','SSF','DCOMP','DS','H','PDF','ASYMCORR','EQUIP')
     
     % --- ORGANIZE DATA ----------------------------------------------
     fprintf('condition: %d - boundary condition: %d -  phi: %.3f - organizing data\n', ic, S.bc, S.phi);
@@ -203,73 +207,14 @@ for ic=conditionstoprocess
        
     % --- determining the ideal gas distance distribution by Montecarlo ---
     fprintf('condition: %d - boundary condition: %d -  phi: %.3f - calculating pair distribution function\n', ic, S.bc, S.phi);
-    gdenominator=zeros(size(pdfedges{3},1)-1,1);
-    noreps=1e4;
-    if S.bc==2
-        ssf100_ig=zeros(size(krange,1),1);
-        ssf111_ig=zeros(size(krange111,1),1);
-        for iig=1:noreps
-            temp=rand(S.N,3).*(2*S.br)-S.br;
-            tempd=pdist(temp);
-            [temphc,pdfedges{3}]=histcounts(tempd,pdfedges{3});
-            gdenominator=gdenominator+temphc';
-            if mod(100*iig/noreps,1)==0
-                fprintf('condition: %d - boundary condition: %d -  phi: %.3f - calculating pair distribution denominator - percentage complete: %d\n', ic, S.bc, S.phi,100*iig/noreps);
-            end
-            ssf100=(1/S.N) * abs(sum(exp(-1i * SSF.kvec100 * temp'), 2)).^2;
-            ssf010=(1/S.N) * abs(sum(exp(-1i * SSF.kvec010 * temp'), 2)).^2;
-            ssf001=(1/S.N) * abs(sum(exp(-1i * SSF.kvec001 * temp'), 2)).^2;
-            ssf111=(1/S.N) * abs(sum(exp(-1i * SSF.kvec111 * temp'), 2)).^2;
-            ssf110=(1/S.N) * abs(sum(exp(-1i * SSF.kvec110 * temp'), 2)).^2;
-            ssf011=(1/S.N) * abs(sum(exp(-1i * SSF.kvec011 * temp'), 2)).^2;
-            ssf101=(1/S.N) * abs(sum(exp(-1i * SSF.kvec101 * temp'), 2)).^2;
-            ssf100_ig = ssf100_ig+mean([ssf100,ssf010,ssf001],2);
-            ssf110_ig = ssf110_ig+mean([ssf110,ssf011,ssf101],2);
-            ssf111_ig = ssf111_ig+ssf111; 
-        end
-        ssf111_ig=ssf111_ig./noreps;
-        ssf110_ig=ssf110_ig./noreps;
-        ssf100_ig=ssf100_ig./noreps;
-    elseif S.bc==1
-        temprho=((rand(S.N,noreps)).^(1/3)).*S.br;
-        tempaz=rand(S.N,noreps).*2*pi-pi;
-        tempel=asin(2.*rand(S.N,noreps)-1);
-        ssf100_ig=zeros(size(SSF.kvec100,1),1);
-        ssf110_ig=zeros(size(SSF.kvec110,1),1);
-        ssf111_ig=zeros(size(SSF.kvec111,1),1);
-
-        for iig=1:noreps
-            [tempx,tempy,tempz]=sph2cart(tempaz(:,iig),tempel(:,iig),temprho(:,iig));
-            temp=[tempx,tempy,tempz];
-            tempd=pdist(temp);
-            [temphc,pdfedges{3}]=histcounts(tempd,pdfedges{3});
-            gdenominator=gdenominator+temphc';
-            if mod(100*iig/noreps,1)==0
-                fprintf('condition: %d - boundary condition: %d -  phi: %.3f - calculating pair distribution denominator - percentage complete: %d\n', ic, S.bc, S.phi,100*iig/noreps);
-            end
-            ssf100=(1/S.N) * abs(sum(exp(-1i * SSF.kvec100 * temp'), 2)).^2;
-            ssf010=(1/S.N) * abs(sum(exp(-1i * SSF.kvec010 * temp'), 2)).^2;
-            ssf001=(1/S.N) * abs(sum(exp(-1i * SSF.kvec001 * temp'), 2)).^2;
-            ssf111=(1/S.N) * abs(sum(exp(-1i * SSF.kvec111 * temp'), 2)).^2;
-            ssf110=(1/S.N) * abs(sum(exp(-1i * SSF.kvec110 * temp'), 2)).^2;
-            ssf011=(1/S.N) * abs(sum(exp(-1i * SSF.kvec011 * temp'), 2)).^2;
-            ssf101=(1/S.N) * abs(sum(exp(-1i * SSF.kvec101 * temp'), 2)).^2;
-            ssf100_ig = ssf100_ig+mean([ssf100,ssf010,ssf001],2);
-            ssf110_ig = ssf110_ig+mean([ssf110,ssf011,ssf101],2);
-            ssf111_ig = ssf111_ig+ssf111;
-        end
-        ssf111_ig=ssf111_ig./noreps;
-        ssf110_ig=ssf110_ig./noreps;
-        ssf100_ig=ssf100_ig./noreps;
-    end
-    gdenominator=gdenominator./noreps;
-    clear temp tempd temprho tempaz tempel
+    filepdfdenom = sprintf('PDFdenom_%.0e_%.0e_%.0f.mat',S.rp,S.phi,S.N);
+    load(filepdfdenom,'gdenominator');
     % ---
     % --- determine the g
     fprintf('condition: %d - boundary condition: %d -  phi: %.3f - average pairs numerator\n', ic, S.bc, S.phi);
     gnumerator=sum(RHO(:,idtherm:end),2)./(size(RHO,2)-idtherm); % average number of pairs in that bin
     g=gnumerator./gdenominator;
-    g=[pdfedges{3}(1:end-1),g];
+    g=[PDF.pdfedges{3}(1:end-1),g];
     % ---
     % --- plot g
     if plottingenabled==1
@@ -286,19 +231,17 @@ for ic=conditionstoprocess
     % --- COLLATING DATA ------------------------------------------------
     fprintf('condition: %d - boundary condition: %d -  phi: %.3f - collating data\n', ic, S.bc, S.phi);
     ISO(ic).g=g;
-    ISO(ic).pdfedges=pdfedges;
-    ISO(ic).rr_dist_distrib=double([pdfedges{4}(1:end-1),double(DS),double(DS)./sum(double(DS))]);
-    ISO(ic).thermalized_mAZ=[pdfedges{1}(1:end-1),MEAN_AZ];
-    ISO(ic).thermalized_mAZS=[pdfedges{1}(1:end-1),MEAN_AZS];
-    ISO(ic).thermalized_mEL=[pdfedges{2}(1:end-1),MEAN_EL];
-    ISO(ic).thermalized_mELS=[pdfedges{2}(1:end-1),MEAN_ELS];
-    ISO(ic).thermalized_mRHO=[pdfedges{3}(1:end-1),MEAN_RHO];
-    ISO(ic).thermalized_mSSF=[krange,MEAN_SSF'];
-    ISO(ic).thermalized_mSSF111=[krange111,MEAN_SSF111'];
+    ISO(ic).pdfedges=PDF.pdfedges;
+    ISO(ic).thermalized_mAZ=[PDF.pdfedges{1}(1:end-1),MEAN_AZ];
+    ISO(ic).thermalized_mAZS=[PDF.pdfedges{1}(1:end-1),MEAN_AZS];
+    ISO(ic).thermalized_mEL=[PDF.pdfedges{2}(1:end-1),MEAN_EL];
+    ISO(ic).thermalized_mELS=[PDF.pdfedges{2}(1:end-1),MEAN_ELS];
+    ISO(ic).thermalized_mRHO=[PDF.pdfedges{3}(1:end-1),MEAN_RHO];
+    ISO(ic).thermalized_mSSF100=MEAN_SSF100';
+    ISO(ic).thermalized_mSSF110=MEAN_SSF110';
+    ISO(ic).thermalized_mSSF111=MEAN_SSF111';
     ISO(ic).stdmmAZS=[[1:numel(STD_MMEAN_AZS)]'.*S.kt,STD_MMEAN_AZS];
     ISO(ic).stdmmELS=[[1:numel(STD_MMEAN_ELS)]'.*S.kt,STD_MMEAN_ELS];
-    ISO(ic).ssf100_ig=[krange(:,1),ssf100_ig];
-    ISO(ic).ssf111_ig=[krange111(:,1),ssf111_ig];
     ISO(ic).thermalizationtime=idtherm*S.kt;
     ISO(ic).thermalizationfit=bestfit;
     ISO(ic).S=S;
