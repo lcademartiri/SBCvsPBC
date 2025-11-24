@@ -31,8 +31,8 @@ C.hydrationlayer=2.5e-10;
 
 %% OPTIONAL SWITCHES
 
-P.pdf=0;
-P.ssf=0;
+P.pdf=1;
+P.ssf=1;
 P.dens=0;
 P.equipartition=0;
 P.cluster=0;
@@ -89,7 +89,7 @@ GPMAT=ghostparticlematrix();
 
 %% SIMULATION EXECUTION
 
-for ic=3 % loop over conditions
+for ic=5 % loop over conditions
     
     if CONDS.alpha(ic,1)==0
         continue

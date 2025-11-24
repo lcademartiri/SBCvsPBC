@@ -31,8 +31,8 @@ C.hydrationlayer=2.5e-10;
 
 %% OPTIONAL SWITCHES
 
-P.pdf=0;
-P.ssf=0;
+P.pdf=1;
+P.ssf=1;
 P.dens=0;
 P.equipartition=0;
 P.cluster=0;
@@ -89,7 +89,7 @@ GPMAT=ghostparticlematrix();
 
 %% SIMULATION EXECUTION
 
-for ic=5 % loop over conditions
+for ic=7 % loop over conditions
     
     if CONDS.alpha(ic,1)==0
         continue
@@ -222,34 +222,50 @@ for ic=5 % loop over conditions
         end
         S.neighbor_linear = neighbor_linear;
         clear nx ny nz dx dy dz SX SY SZ neighbor_offsets neighbor_linear
+    
     elseif S.bc==4
-        % --- Half-Shell Neighbor Offsets (13 neighbors) ---
-        % (Ensure 'neighbor_offsets' is defined with the 13 rows from previous chat)
+        % --- BIG BOX SETUP (Non-Periodic) ---
+        L = 2 * S.br;
+        rc = S.rc;
+        ncell = max(1, floor(L / rc));
+        cellsize = L / ncell;
+        S.cellsize = cellsize;
+        S.ncell = ncell;
         
-        % Precompute neighbor_linear for BB but mark out-of-range as 0
-        all_ids = (1:ncell^3)';
-        cz = floor((all_ids-1) / (ncell*ncell)) + 1;
-        remainder = all_ids - (cz-1)*ncell*ncell;
-        cy = floor((remainder-1) / ncell) + 1;
-        cx = remainder - (cy-1)*ncell - (cz-1)*ncell*ncell;
+        % 1. Define 13 Half-Shell Offsets (Forward Neighbors)
+        neighbor_offsets = [
+            1,  0,  0;   1,  1,  0;   0,  1,  0;  -1,  1,  0; % Z=0 (4)
+            1,  0,  1;   1,  1,  1;   0,  1,  1;  -1,  1,  1; % Z=1 (9)
+           -1,  0,  1;  -1, -1,  1;   0, -1,  1;   1, -1,  1;   0,  0,  1
+        ];
         
-        % Initialize with 13 rows (not 27)
+        % 2. Initialize neighbor lookup table
         neighbor_linear = zeros(13, ncell^3);
+        
+        % 3. Generate subscripts for ALL cells (1 to N^3)
+        all_ids = (1:ncell^3)';
+        [cx, cy, cz] = ind2sub([ncell, ncell, ncell], all_ids);
         
         for k = 1:13
             dx = neighbor_offsets(k,1);
             dy = neighbor_offsets(k,2);
             dz = neighbor_offsets(k,3);
+            
+            % Apply shift (No Wrapping!)
             nx = cx + dx;
             ny = cy + dy;
             nz = cz + dz;
-        
-            % Check bounds (No wrapping for BB)
-            valid = nx>=1 & nx<=ncell & ny>=1 & ny<=ncell & nz>=1 & nz<=ncell;
             
-            lin = zeros(size(cx));
-            lin(valid) = nx(valid) + ncell*(ny(valid)-1) + ncell*ncell*(nz(valid)-1);
-            neighbor_linear(k,:) = lin;
+            % Valid Mask: Neighbor must be strictly inside the grid
+            valid = (nx >= 1 & nx <= ncell) & ...
+                    (ny >= 1 & ny <= ncell) & ...
+                    (nz >= 1 & nz <= ncell);
+            
+            % Assign valid neighbors (Keep 0 for OOB)
+            lin_idx = zeros(size(cx));
+            lin_idx(valid) = nx(valid) + ncell*(ny(valid)-1) + ncell*ncell*(nz(valid)-1);
+            
+            neighbor_linear(k, :) = lin_idx;
         end
         S.neighbor_linear = neighbor_linear;
         clear nx ny nz dx dy dz SX SY SZ neighbor_offsets neighbor_linear valid lin all_ids remainder cx cy cz
@@ -687,10 +703,7 @@ for ic=5 % loop over conditions
                 if mod(qs,P.pdfthermints)==0 | qs==1
                     ssf_ind=floor(qs/P.pdfthermints)+1;
                     tempp=p(1:S.N,1:3);
-                    if S.bc==3
-                        tempp=FCCrotate(tempp,fccrotatev);
-                    end
-                    SSF=ssf_accumulation(tempp',SSF,ssf_ind);
+                    SSF=ssf_accumulation(tempp',SSF,ssf_ind,S.N);
                 end
             end
             % --------------------------
