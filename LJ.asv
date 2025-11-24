@@ -31,11 +31,11 @@ C.hydrationlayer=2.5e-10;
 
 %% OPTIONAL SWITCHES
 
-P.pdf=1;
-P.ssf=1;
-P.dens=1;
-P.equipartition=1;
-P.cluster=1;
+P.pdf=0;
+P.ssf=0;
+P.dens=0;
+P.equipartition=0;
+P.cluster=0;
 P.exvol=0;
 P.correctionwindow=0; % window of the correction; 0 = no correction, 1e6 = S.rc, any other value X=X*S.rp;
 P.convergencemode=1; % 1  by step numbers, 2 by coll numbers, 3 by coll rates convergence
@@ -166,54 +166,77 @@ for ic=3 % loop over conditions
         S.fcc.A = diag([L,L,L]);
         S.fcc.invA = diag([1/L,1/L,1/L]); 
     end
+    % --- CELL LIST SETUP (Half-Shell Logic) ---
     if S.bc==2 || S.bc==3
         
-        if S.bc==2
-        % --- Cell list grid ---
+        % 1. Define Grid Size
+        if S.bc==2 % Cubic
             cellsize = S.rc;
             ncell = max(1, floor(2*S.br/cellsize));
             cellsize = 2*S.br/ncell;
-        elseif S.bc==3
-            % fractional cutoff estimate
+        elseif S.bc==3 % FCC
             frac_cut = norm(S.fcc.invA * [S.rc 0 0].');
             ncell = max(1, floor(1/frac_cut));
             cellsize = 1/ncell;
         end
-        S.cellsize=cellsize;
-        % Precompute the 27 neighbor offsets (Cubic PBC)
-        [SX,SY,SZ] = ndgrid(-1:1, -1:1, -1:1);
-        neighbor_offsets = [SX(:), SY(:), SZ(:)];   % 27×3
+        S.cellsize = cellsize;
+        S.ncell = ncell;
+
+        % 2. Define 13 Half-Shell Offsets (Forward Neighbors)
+        neighbor_offsets = [
+            1,  0,  0;   1,  1,  0;   0,  1,  0;  -1,  1,  0; % Z=0 (4)
+            1,  0,  1;   1,  1,  1;   0,  1,  1;  -1,  1,  1; % Z=1 (9)
+           -1,  0,  1;  -1, -1,  1;   0, -1,  1;   1, -1,  1;   0,  0,  1
+        ];
         
-        % Precompute cell linear indices for each offset
-        neighbor_linear = cell(27,1);
-        for k = 1:27
+        % 3. Precompute Linear Indices (PBC Wrapping) - FIXED
+        neighbor_linear = cell(13,1);
+        
+        % Generate subscripts for ALL cells (1 to N^3)
+        all_ids = (1:ncell^3)';
+        [cx, cy, cz] = ind2sub([ncell, ncell, ncell], all_ids);
+        
+        for k = 1:13
             dx = neighbor_offsets(k,1);
             dy = neighbor_offsets(k,2);
             dz = neighbor_offsets(k,3);
         
-            nx = mod((1:ncell)' - 1 + dx, ncell) + 1;
-            ny = mod((1:ncell)' - 1 + dy, ncell) + 1;
-            nz = mod((1:ncell)' - 1 + dz, ncell) + 1;
-        
-            neighbor_linear{k} = ...
-                nx + ncell*(ny-1) + ncell*ncell*(nz-1);
+            % Apply shift
+            nx = cx + dx;
+            ny = cy + dy;
+            nz = cz + dz;
+            
+            % Wrap indices 1..ncell (Periodic Boundary)
+            % (x-1 mod N) + 1 formula handles the 1-based indexing correctly
+            nx = mod(nx - 1, ncell) + 1;
+            ny = mod(ny - 1, ncell) + 1;
+            nz = mod(nz - 1, ncell) + 1;
+            
+            % Convert back to linear index
+            % Note: ind2sub/sub2ind order is X, Y, Z if we define dims that way.
+            % Manual calc ensures consistency with accumarray logic later.
+            % Format: x + (y-1)*N + (z-1)*N^2
+            lin_idx = nx + ncell*(ny-1) + ncell*ncell*(nz-1);
+            
+            neighbor_linear{k} = lin_idx;
         end
-        S.neighbor_linear=neighbor_linear;
+        S.neighbor_linear = neighbor_linear;
         clear nx ny nz dx dy dz SX SY SZ neighbor_offsets neighbor_linear
     elseif S.bc==4
-        % Precompute neighbor offsets (same neighbor_offsets)
-        [SX,SY,SZ] = ndgrid(-1:1,-1:1,-1:1);
-        neighbor_offsets = [SX(:), SY(:), SZ(:)];
+        % --- Half-Shell Neighbor Offsets (13 neighbors) ---
+        % (Ensure 'neighbor_offsets' is defined with the 13 rows from previous chat)
         
-        % Precompute neighbor_linear for BB but mark out-of-range as 0 (or NaN)
+        % Precompute neighbor_linear for BB but mark out-of-range as 0
         all_ids = (1:ncell^3)';
         cz = floor((all_ids-1) / (ncell*ncell)) + 1;
         remainder = all_ids - (cz-1)*ncell*ncell;
         cy = floor((remainder-1) / ncell) + 1;
         cx = remainder - (cy-1)*ncell - (cz-1)*ncell*ncell;
         
-        neighbor_linear = zeros(27, ncell^3);      % 0 => out of range
-        for k = 1:27
+        % Initialize with 13 rows (not 27)
+        neighbor_linear = zeros(13, ncell^3);
+        
+        for k = 1:13
             dx = neighbor_offsets(k,1);
             dy = neighbor_offsets(k,2);
             dz = neighbor_offsets(k,3);
@@ -221,12 +244,14 @@ for ic=3 % loop over conditions
             ny = cy + dy;
             nz = cz + dz;
         
+            % Check bounds (No wrapping for BB)
             valid = nx>=1 & nx<=ncell & ny>=1 & ny<=ncell & nz>=1 & nz<=ncell;
+            
             lin = zeros(size(cx));
             lin(valid) = nx(valid) + ncell*(ny(valid)-1) + ncell*ncell*(nz(valid)-1);
             neighbor_linear(k,:) = lin;
         end
-        S.neighbor_linear=neighbor_linear;
+        S.neighbor_linear = neighbor_linear;
         clear nx ny nz dx dy dz SX SY SZ neighbor_offsets neighbor_linear valid lin all_ids remainder cx cy cz
     end
     IDlist=double(linspace(1,S.N,S.N)'); % id list for all particles in the boundary to use when the position matrix 'p' is rebuilt at the beginning of every time step
@@ -249,7 +274,7 @@ for ic=3 % loop over conditions
 
         % --- MONTECARLO CLAMP DETERMINATION ---
         if S.potential~=0
-            S.pot_clamp=mcdClamp(P.nodisp,S.rp,DISP,S.esdiff,S.timestep,H,C.kbT);            
+            S.pot_clamp=mcdClamp(P.nodisp,DISP,S.esdiff,S.timestep,H(H(:,1) >= 0.8 * S.pot_sigma, :),C.kbT);            
         end
         % ---
 
@@ -299,15 +324,6 @@ for ic=3 % loop over conditions
             % ---
         else
             p=startingPositions_lj(S);
-            % if there is a potential precalculate the ghosts so that they 
-            % can provide interaction with the reals
-            % if S.potential~=0 
-            %     [p,~,idxgp]=ghostParticles_initialonly(S,p,GPMAT);
-            %     pgp=p(S.N+1:end,:);
-            %     p=p(1:S.N,:);
-            %     ptemp=[p;pgp];
-            %     S.Na=size(ptemp,1);
-            % end
         end
         % ---
 
@@ -341,19 +357,16 @@ for ic=3 % loop over conditions
             % ---- CALCULATION OF DISPLACEMENTS BY POTENTIALS --------------
             if S.potential~=0
                 if S.bc==1 % SBC
-                    freeghosts=1;
                     % calculate the displacement components due to potentials for all particles (reals and active ghosts)
-                    disppot=potential_displacements_v2(ptemp,S.Na,S.rc,H,H_interpolant,S.esdiff,S.pot_clamp,S.kbT,S.stdx,S.timestep,0);
+                    [disppot,coll1,coll2,dists]=potential_displacements_v2(ptemp, S, H, H_interpolant, 0);
                     % extract potential displacements for active ghosts
                     disppotgp=disppot(S.N+1:end,:);
                     % extract potential displacements for reals
                     disppot=disppot(1:S.N,:);
-                else % NON-SBC conditions (PBC) -- ghost generation removed; use MIC instead
-                    % GHOSTS REMOVED: ptemp should contain only real particles.
+                else % NON-SBC conditions (PBC)
                     % Under MIC we evaluate pairwise displacements using
                     % minimum-image convention on the real particle list.
-                    % compute potential displacements using ptemp (reals only)
-                    disppot=potential_displacements_v2(p,S.N,S.rc,H,H_interpolant,S.esdiff,S.pot_clamp,S.kbT,S.stdx,S.timestep,0);
+                    [disppot,coll1,coll2,dists]=potential_displacements_v2(p, S, H, H_interpolant, 0);
                 end
             end
             % --------------------------------------------------------------
@@ -364,6 +377,14 @@ for ic=3 % loop over conditions
                 qd=qd+S.N; % update displacement library counter
                 if S.potential~=0 % if not HS add potential displacement component
                     displacements=displacements+disppot;
+                end
+                p=[p,IDlist,displacements,p+displacements];
+                % ----  BIG BOX BOUNDARY INTERACTIONS -----
+                if S.bc==4
+                    % this function teleports particle that touch the hard
+                    % boundary to avoid progressive condensation and therefore
+                    % depletion from the core of the domain
+                    p=bigboxTeleport(S,p); 
                 end
             elseif S.bc==1 % SBC
                 % extract brownian displacements for reals and ghosts
@@ -411,37 +432,14 @@ for ic=3 % loop over conditions
                 % update ghost master list
                     pgp0.active(:,:)=0;
                     pgp0.active(pgp(:,4),1)=1;
-                    pgp0.lastStep(pgp(:,4),:)=qs;                    
+                    pgp0.lastStep(pgp(:,4),:)=qs;
+                    p=[p,IDlist,displacements,p+displacements]; % the p matrix contains [positions at the beginning of step, particle ID, displacements, positions at the end of the step]
+                    p=[p;pgp];
             end
-            p=p(1:S.N,:);
-            p=[p,IDlist,displacements,p+displacements]; % the p matrix contains [positions at the beginning of step, particle ID, displacements, positions at the end of the step]
             % --------------------------------------------------------------
 
-            % ----  PERIODIC BOUNDARY GHOST PARTICLES and BIG BOX BOUNDARY INTERACTIONS -----
-            if S.bc~=4 && S.bc~=1
-                [p,~]=ghostParticles_rc_fcc(S,p,GPMAT,displacements);
-            elseif S.bc==4
-                % this function teleports particle that touch the hard
-                % boundary to avoid progressive condensation and therefore
-                % depletion from the core of the domain
-                p=bigboxTeleport(S,p); 
-            elseif S.bc==1
-                p=[p;pgp];
-            end
-            % ----
-
             % ---- PROCESSING COLLISIONS
-            if S.bc==1 || S.bc==4
-                Nreal=size(p,1);
-                if Nreal>5000
-                    idxcoll = rangesearch(p(:,8:10), p(:,8:10), 2*S.rp);
-                else
-                    idxcoll=sign(2*S.rp-pdist(p(:,8:10))')+1; % calculate all distances, subtract them from 2r, and pick the sign. If -1 then distances>2r, if +1 then distance<2r. Then add 1.
-                end
-            else
-                distvec = mic_pairwise_distances(p(:,8:10), S);
-                idxcoll = sign(2*S.rp - distvec') + 1;
-            end
+            idxcoll=vecnorm(dists,2,2)<(2*S.rp);
             if sum(idxcoll,'all')>0
 
                 % --- labeling individual particles to ensure only the right particles are considered
@@ -484,21 +482,8 @@ for ic=3 % loop over conditions
                     % ---
 
                     % --- IDENTIFY THE COLLIDERS
-                    Nreal=size(p,1);
-                    if Nreal>5000
-                        num_neighbors = cellfun(@numel, idxcoll);
-                        coll2 = [idxcoll{:}]'; 
-                        coll1 = repelem(1:Nreal, num_neighbors)';
-                        mask = coll1 < coll2;
-                        coll1 = coll1(mask);
-                        coll2 = coll2(mask);
-                    else
-                        collpairs=find(idxcoll);
-                        bin=ceil(-0.5*sqrt(8*nchoosek(Nreal,2)-8*collpairs+1)+Nreal-0.5);
-                        coll1=bin;
-                        binedges=0.5*(Nreal-bin)-0.5*(Nreal-bin).^2+nchoosek(Nreal,2);
-                        coll2=Nreal-binedges+collpairs;
-                    end
+                    coll1=coll1(idxcoll,:);
+                    coll2=coll2(idxcoll,:);
                     % ---
                     
                     % --- MAKE A LIST OF THE COLLIDERS (position of collider #1, position of collider #2, row# of collider #1 and #2), theN identify those who collide OUTSIDE the boundary, and then eliminate the midpoint coordinates from the collider matrix (for economy) ---
@@ -613,10 +598,10 @@ for ic=3 % loop over conditions
             % ----
 
             % --- PBC POSITION WRAPPING
-                % Wrap positions by MIC to canonical cell (if PBC)
-                if S.bc==2 || S.bc==3
-                    p(:,8:10) = mic_wrap_positions(p(:,8:10), S);
-                end
+            % Wrap positions by MIC to canonical cell (if PBC)
+            if S.bc==2 || S.bc==3
+                p(:,8:10)=mic_wrap_positions(p(:,8:10), S);
+            end
 
             % --- EQUIPARTIION ANALYSIS -----------------------------------
             if P.equipartition==1
@@ -640,7 +625,11 @@ for ic=3 % loop over conditions
 
             % --- DENSITY ANALYSIS ----------------------------------------
             if P.dens==1
-                DCOMP = densityEngine('accumulate', DCOMP, S, P, [p;pgp]);
+                if S.bc==1
+                    DCOMP = densityEngine('accumulate', DCOMP, S, P, [p;pgp]);
+                else
+                    DCOMP = densityEngine('accumulate', DCOMP, S, P, p);
+                end
             end
             % ------------------------------------------------------------
 
@@ -648,7 +637,11 @@ for ic=3 % loop over conditions
             Nreal=size(p,1);
             if P.pdf==1
                 if mod(qs,P.pdfthermints)==0 | qs==1
-                    ppdf=[p;pgp];
+                    if S.bc==1
+                        ppdf=[p;pgp];
+                    else
+                        ppdf=p;
+                    end
                     clear PDFD
                     % GET DISTANCE DISTRIBUTION
                     % calculate all distance vectors
@@ -657,12 +650,12 @@ for ic=3 % loop over conditions
                         PDFD(:,:,2)=(p(:,2)-p(:,2)');
                         PDFD(:,:,3)=(p(:,3)-p(:,3)');
                         PDFD=reshape(PDFD,[],3);
+                        % eliminate distances between identical particles
+                        PDFD(PDFD(:,1)==0,:)=[];
                     else
-                        % calculate all distance vectors using MIC
-                        PDFD = mic_all_pair_displacements(p(:,1:3), S); % returns Mx3 array of minimum-image displacement vectors (M = N*(N-1))
+                        PDFD = mic_all_pair_displacements(p(:,8:10), S); % returns Mx3 array of minimum-image displacement vectors (M = N*(N-1))
                     end
-                    % eliminate distances between identical particles
-                    PDFD(PDFD(:,1)==0,:)=[];
+                    
                     if S.bc==3
                         fccrotatev=[1 1 1] / norm([1 1 1]);
                         PDFD=FCCrotate(PDFD,fccrotatev);
@@ -697,27 +690,7 @@ for ic=3 % loop over conditions
                     if S.bc==3
                         tempp=FCCrotate(tempp,fccrotatev);
                     end
-                    tempp=tempp';
-                    ssf100_raw=sum(exp(-1i * SSF.kvec100 * tempp), 2);
-                    ssf010_raw=sum(exp(-1i * SSF.kvec010 * tempp), 2);
-                    ssf001_raw=sum(exp(-1i * SSF.kvec001 * tempp), 2);
-                    ssf111_raw=sum(exp(-1i * SSF.kvec111 * tempp), 2);
-                    ssf110_raw=sum(exp(-1i * SSF.kvec110 * tempp), 2);
-                    ssf011_raw=sum(exp(-1i * SSF.kvec011 * tempp), 2);
-                    ssf101_raw=sum(exp(-1i * SSF.kvec101 * tempp), 2);
-                    ssf100=(1/S.N) * abs(ssf100_raw).^2;
-                    ssf010=(1/S.N) * abs(ssf010_raw).^2;
-                    ssf001=(1/S.N) * abs(ssf001_raw).^2;
-                    ssf111=(1/S.N) * abs(ssf111_raw).^2;
-                    ssf110=(1/S.N) * abs(ssf110_raw).^2;
-                    ssf011=(1/S.N) * abs(ssf011_raw).^2;
-                    ssf101=(1/S.N) * abs(ssf101_raw).^2;
-                    SSF.SSF100_raw(ssf_ind,:) = mean([ssf100_raw,ssf010_raw,ssf001_raw],2);
-                    SSF.SSF110_raw(ssf_ind,:) = mean([ssf110_raw,ssf011_raw,ssf101_raw],2);
-                    SSF.SSF111_raw(ssf_ind,:)=ssf111_raw;
-                    SSF.SSF100(ssf_ind,:) = mean([ssf100,ssf010,ssf001],2);
-                    SSF.SSF110(ssf_ind,:) = mean([ssf110,ssf011,ssf101],2);
-                    SSF.SSF111(ssf_ind,:)=ssf111;
+                    SSF=ssf_accumulation(tempp',SSF,ssf_ind);
                 end
             end
             % --------------------------
@@ -783,6 +756,10 @@ for ic=3 % loop over conditions
             end
             % ---
             
+            % ---
+            p=p(1:S.N,8:10);
+            % ---
+
             % --- SAVING TEMP FILE ---
             if (qs<1e4 && mod(log2(qs),1)==0) || mod(qs,1e4)==0
                 save([output_folder,'\',tempfilename],'C','EDGES','P','V','S','-v7.3')

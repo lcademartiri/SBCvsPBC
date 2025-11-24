@@ -31,7 +31,7 @@ C.hydrationlayer=2.5e-10;
 
 %% OPTIONAL SWITCHES
 
-P.pdf=1;
+P.pdf=0;
 P.ssf=0;
 P.dens=0;
 P.equipartition=0;
@@ -357,19 +357,16 @@ for ic=5 % loop over conditions
             % ---- CALCULATION OF DISPLACEMENTS BY POTENTIALS --------------
             if S.potential~=0
                 if S.bc==1 % SBC
-                    freeghosts=1;
                     % calculate the displacement components due to potentials for all particles (reals and active ghosts)
-                    disppot=potential_displacements_v2(ptemp, S, H, H_interpolant, 0);
+                    [disppot,coll1,coll2,dists]=potential_displacements_v2(ptemp, S, H, H_interpolant, 0);
                     % extract potential displacements for active ghosts
                     disppotgp=disppot(S.N+1:end,:);
                     % extract potential displacements for reals
                     disppot=disppot(1:S.N,:);
-                else % NON-SBC conditions (PBC) -- ghost generation removed; use MIC instead
-                    % GHOSTS REMOVED: ptemp should contain only real particles.
+                else % NON-SBC conditions (PBC)
                     % Under MIC we evaluate pairwise displacements using
                     % minimum-image convention on the real particle list.
-                    % compute potential displacements using ptemp (reals only)
-                    disppot=potential_displacements_v2(p, S, H, H_interpolant, 0);
+                    [disppot,coll1,coll2,dists]=potential_displacements_v2(p, S, H, H_interpolant, 0);
                 end
             end
             % --------------------------------------------------------------
@@ -380,6 +377,14 @@ for ic=5 % loop over conditions
                 qd=qd+S.N; % update displacement library counter
                 if S.potential~=0 % if not HS add potential displacement component
                     displacements=displacements+disppot;
+                end
+                p=[p,IDlist,displacements,p+displacements];
+                % ----  BIG BOX BOUNDARY INTERACTIONS -----
+                if S.bc==4
+                    % this function teleports particle that touch the hard
+                    % boundary to avoid progressive condensation and therefore
+                    % depletion from the core of the domain
+                    p=bigboxTeleport(S,p); 
                 end
             elseif S.bc==1 % SBC
                 % extract brownian displacements for reals and ghosts
@@ -427,37 +432,14 @@ for ic=5 % loop over conditions
                 % update ghost master list
                     pgp0.active(:,:)=0;
                     pgp0.active(pgp(:,4),1)=1;
-                    pgp0.lastStep(pgp(:,4),:)=qs;                    
+                    pgp0.lastStep(pgp(:,4),:)=qs;
+                    p=[p,IDlist,displacements,p+displacements]; % the p matrix contains [positions at the beginning of step, particle ID, displacements, positions at the end of the step]
+                    p=[p;pgp];
             end
-            p=p(1:S.N,:);
-            p=[p,IDlist,displacements,p+displacements]; % the p matrix contains [positions at the beginning of step, particle ID, displacements, positions at the end of the step]
             % --------------------------------------------------------------
 
-            % ----  PERIODIC BOUNDARY GHOST PARTICLES and BIG BOX BOUNDARY INTERACTIONS -----
-            if S.bc~=4 && S.bc~=1
-                [p,~]=ghostParticles_rc_fcc(S,p,GPMAT,displacements);
-            elseif S.bc==4
-                % this function teleports particle that touch the hard
-                % boundary to avoid progressive condensation and therefore
-                % depletion from the core of the domain
-                p=bigboxTeleport(S,p); 
-            elseif S.bc==1
-                p=[p;pgp];
-            end
-            % ----
-
             % ---- PROCESSING COLLISIONS
-            if S.bc==1 || S.bc==4
-                Nreal=size(p,1);
-                if Nreal>5000
-                    idxcoll = rangesearch(p(:,8:10), p(:,8:10), 2*S.rp);
-                else
-                    idxcoll=sign(2*S.rp-pdist(p(:,8:10))')+1; % calculate all distances, subtract them from 2r, and pick the sign. If -1 then distances>2r, if +1 then distance<2r. Then add 1.
-                end
-            else
-                distvec = mic_pairwise_distances(p(:,8:10), S);
-                idxcoll = sign(2*S.rp - distvec') + 1;
-            end
+            idxcoll=vecnorm(dists,2,2)<(2*S.rp);
             if sum(idxcoll,'all')>0
 
                 % --- labeling individual particles to ensure only the right particles are considered
@@ -500,21 +482,8 @@ for ic=5 % loop over conditions
                     % ---
 
                     % --- IDENTIFY THE COLLIDERS
-                    Nreal=size(p,1);
-                    if Nreal>5000
-                        num_neighbors = cellfun(@numel, idxcoll);
-                        coll2 = [idxcoll{:}]'; 
-                        coll1 = repelem(1:Nreal, num_neighbors)';
-                        mask = coll1 < coll2;
-                        coll1 = coll1(mask);
-                        coll2 = coll2(mask);
-                    else
-                        collpairs=find(idxcoll);
-                        bin=ceil(-0.5*sqrt(8*nchoosek(Nreal,2)-8*collpairs+1)+Nreal-0.5);
-                        coll1=bin;
-                        binedges=0.5*(Nreal-bin)-0.5*(Nreal-bin).^2+nchoosek(Nreal,2);
-                        coll2=Nreal-binedges+collpairs;
-                    end
+                    coll1=coll1(idxcoll,:);
+                    coll2=coll2(idxcoll,:);
                     % ---
                     
                     % --- MAKE A LIST OF THE COLLIDERS (position of collider #1, position of collider #2, row# of collider #1 and #2), theN identify those who collide OUTSIDE the boundary, and then eliminate the midpoint coordinates from the collider matrix (for economy) ---
@@ -629,10 +598,10 @@ for ic=5 % loop over conditions
             % ----
 
             % --- PBC POSITION WRAPPING
-                % Wrap positions by MIC to canonical cell (if PBC)
-                if S.bc==2 || S.bc==3
-                    p(:,8:10) = mic_wrap_positions(p(:,8:10), S);
-                end
+            % Wrap positions by MIC to canonical cell (if PBC)
+            if S.bc==2 || S.bc==3
+                p(:,8:10)=mic_wrap_positions(p(:,8:10), S);
+            end
 
             % --- EQUIPARTIION ANALYSIS -----------------------------------
             if P.equipartition==1
@@ -656,7 +625,11 @@ for ic=5 % loop over conditions
 
             % --- DENSITY ANALYSIS ----------------------------------------
             if P.dens==1
-                DCOMP = densityEngine('accumulate', DCOMP, S, P, [p;pgp]);
+                if S.bc==1
+                    DCOMP = densityEngine('accumulate', DCOMP, S, P, [p;pgp]);
+                else
+                    DCOMP = densityEngine('accumulate', DCOMP, S, P, p);
+                end
             end
             % ------------------------------------------------------------
 
@@ -664,7 +637,11 @@ for ic=5 % loop over conditions
             Nreal=size(p,1);
             if P.pdf==1
                 if mod(qs,P.pdfthermints)==0 | qs==1
-                    ppdf=[p;pgp];
+                    if S.bc==1
+                        ppdf=[p;pgp];
+                    else
+                        ppdf=p;
+                    end
                     clear PDFD
                     % GET DISTANCE DISTRIBUTION
                     % calculate all distance vectors
@@ -673,12 +650,12 @@ for ic=5 % loop over conditions
                         PDFD(:,:,2)=(p(:,2)-p(:,2)');
                         PDFD(:,:,3)=(p(:,3)-p(:,3)');
                         PDFD=reshape(PDFD,[],3);
+                        % eliminate distances between identical particles
+                        PDFD(PDFD(:,1)==0,:)=[];
                     else
-                        % calculate all distance vectors using MIC
-                        PDFD = mic_all_pair_displacements(p(:,1:3), S); % returns Mx3 array of minimum-image displacement vectors (M = N*(N-1))
+                        PDFD = mic_all_pair_displacements(p(:,8:10), S); % returns Mx3 array of minimum-image displacement vectors (M = N*(N-1))
                     end
-                    % eliminate distances between identical particles
-                    PDFD(PDFD(:,1)==0,:)=[];
+                    
                     if S.bc==3
                         fccrotatev=[1 1 1] / norm([1 1 1]);
                         PDFD=FCCrotate(PDFD,fccrotatev);
@@ -713,27 +690,7 @@ for ic=5 % loop over conditions
                     if S.bc==3
                         tempp=FCCrotate(tempp,fccrotatev);
                     end
-                    tempp=tempp';
-                    ssf100_raw=sum(exp(-1i * SSF.kvec100 * tempp), 2);
-                    ssf010_raw=sum(exp(-1i * SSF.kvec010 * tempp), 2);
-                    ssf001_raw=sum(exp(-1i * SSF.kvec001 * tempp), 2);
-                    ssf111_raw=sum(exp(-1i * SSF.kvec111 * tempp), 2);
-                    ssf110_raw=sum(exp(-1i * SSF.kvec110 * tempp), 2);
-                    ssf011_raw=sum(exp(-1i * SSF.kvec011 * tempp), 2);
-                    ssf101_raw=sum(exp(-1i * SSF.kvec101 * tempp), 2);
-                    ssf100=(1/S.N) * abs(ssf100_raw).^2;
-                    ssf010=(1/S.N) * abs(ssf010_raw).^2;
-                    ssf001=(1/S.N) * abs(ssf001_raw).^2;
-                    ssf111=(1/S.N) * abs(ssf111_raw).^2;
-                    ssf110=(1/S.N) * abs(ssf110_raw).^2;
-                    ssf011=(1/S.N) * abs(ssf011_raw).^2;
-                    ssf101=(1/S.N) * abs(ssf101_raw).^2;
-                    SSF.SSF100_raw(ssf_ind,:) = mean([ssf100_raw,ssf010_raw,ssf001_raw],2);
-                    SSF.SSF110_raw(ssf_ind,:) = mean([ssf110_raw,ssf011_raw,ssf101_raw],2);
-                    SSF.SSF111_raw(ssf_ind,:)=ssf111_raw;
-                    SSF.SSF100(ssf_ind,:) = mean([ssf100,ssf010,ssf001],2);
-                    SSF.SSF110(ssf_ind,:) = mean([ssf110,ssf011,ssf101],2);
-                    SSF.SSF111(ssf_ind,:)=ssf111;
+                    SSF=ssf_accumulation(tempp',SSF,ssf_ind);
                 end
             end
             % --------------------------
@@ -799,6 +756,10 @@ for ic=5 % loop over conditions
             end
             % ---
             
+            % ---
+            p=p(1:S.N,8:10);
+            % ---
+
             % --- SAVING TEMP FILE ---
             if (qs<1e4 && mod(log2(qs),1)==0) || mod(qs,1e4)==0
                 save([output_folder,'\',tempfilename],'C','EDGES','P','V','S','-v7.3')
