@@ -35,9 +35,9 @@ P.pdf=1;
 P.ssf=1;
 P.dens=1;
 P.equipartition=1;
-P.cluster=0;
+P.cluster=1;
 P.exvol=0;
-P.correctionwindow=2; % window of the correction; 0 = no correction, 1e6 = S.rc, any other value X=X*S.rp;
+P.correctionwindow=0; % window of the correction; 0 = no correction, 1e6 = S.rc, any other value X=X*S.rp;
 P.convergencemode=1; % 1  by step numbers, 2 by coll numbers, 3 by coll rates convergence
 P.pdfbins=[180,90]; % number of bins for azimuth, elevation
 P.pdfthermints=10; % interval of steps between snapshots of pdfs to ascertain thermalization
@@ -89,7 +89,7 @@ GPMAT=ghostparticlematrix();
 
 %% SIMULATION EXECUTION
 
-for ic=1 % loop over conditions
+for ic=3 % loop over conditions
     
     if CONDS.alpha(ic,1)==0
         continue
@@ -164,7 +164,70 @@ for ic=1 % loop over conditions
         % for cubic PBC use diag(L,L,L) for MIC transforms
         L = 2*S.br;
         S.fcc.A = diag([L,L,L]);
-        S.fcc.invA = diag([1/L,1/L,1/L]);
+        S.fcc.invA = diag([1/L,1/L,1/L]); 
+    end
+    if S.bc==2 || S.bc==3
+        
+        if S.bc==2
+        % --- Cell list grid ---
+            cellsize = S.rc;
+            ncell = max(1, floor(2*S.br/cellsize));
+            cellsize = 2*S.br/ncell;
+        elseif S.bc==3
+            % fractional cutoff estimate
+            frac_cut = norm(S.fcc.invA * [S.rc 0 0].');
+            ncell = max(1, floor(1/frac_cut));
+            cellsize = 1/ncell;
+        end
+        S.cellsize=cellsize;
+        % Precompute the 27 neighbor offsets (Cubic PBC)
+        [SX,SY,SZ] = ndgrid(-1:1, -1:1, -1:1);
+        neighbor_offsets = [SX(:), SY(:), SZ(:)];   % 27×3
+        
+        % Precompute cell linear indices for each offset
+        neighbor_linear = cell(27,1);
+        for k = 1:27
+            dx = neighbor_offsets(k,1);
+            dy = neighbor_offsets(k,2);
+            dz = neighbor_offsets(k,3);
+        
+            nx = mod((1:ncell)' - 1 + dx, ncell) + 1;
+            ny = mod((1:ncell)' - 1 + dy, ncell) + 1;
+            nz = mod((1:ncell)' - 1 + dz, ncell) + 1;
+        
+            neighbor_linear{k} = ...
+                nx + ncell*(ny-1) + ncell*ncell*(nz-1);
+        end
+        S.neighbor_linear=neighbor_linear;
+        clear nx ny nz dx dy dz SX SY SZ neighbor_offsets neighbor_linear
+    elseif S.bc==4
+        % Precompute neighbor offsets (same neighbor_offsets)
+        [SX,SY,SZ] = ndgrid(-1:1,-1:1,-1:1);
+        neighbor_offsets = [SX(:), SY(:), SZ(:)];
+        
+        % Precompute neighbor_linear for BB but mark out-of-range as 0 (or NaN)
+        all_ids = (1:ncell^3)';
+        cz = floor((all_ids-1) / (ncell*ncell)) + 1;
+        remainder = all_ids - (cz-1)*ncell*ncell;
+        cy = floor((remainder-1) / ncell) + 1;
+        cx = remainder - (cy-1)*ncell - (cz-1)*ncell*ncell;
+        
+        neighbor_linear = zeros(27, ncell^3);      % 0 => out of range
+        for k = 1:27
+            dx = neighbor_offsets(k,1);
+            dy = neighbor_offsets(k,2);
+            dz = neighbor_offsets(k,3);
+            nx = cx + dx;
+            ny = cy + dy;
+            nz = cz + dz;
+        
+            valid = nx>=1 & nx<=ncell & ny>=1 & ny<=ncell & nz>=1 & nz<=ncell;
+            lin = zeros(size(cx));
+            lin(valid) = nx(valid) + ncell*(ny(valid)-1) + ncell*ncell*(nz(valid)-1);
+            neighbor_linear(k,:) = lin;
+        end
+        S.neighbor_linear=neighbor_linear;
+        clear nx ny nz dx dy dz SX SY SZ neighbor_offsets neighbor_linear valid lin all_ids remainder cx cy cz
     end
     IDlist=double(linspace(1,S.N,S.N)'); % id list for all particles in the boundary to use when the position matrix 'p' is rebuilt at the beginning of every time step
     % ---
@@ -217,7 +280,7 @@ for ic=1 % loop over conditions
         % --- STARTING POSITIONS & DETERMINING SBC RADIAL DISPLACEMENT ASYMMETRY CORRECTION ---
         if S.bc==1
             if S.potential==1, potname='lj'; elseif S.potential==2, potname='wca'; else potname='hs'; end
-            filestartingconfiguration = sprintf(['START_SBC_%s_%.0e_%.0e_%.0f_%.1f_%.1e.mat'],...
+            filestartingconfiguration = sprintf('START_SBC_%s_%.0e_%.0e_%.0f_%.1f_%.1e.mat',...
                         potname,S.rp,S.phi,S.N,S.pot_epsilon/S.kbT,S.pot_sigma);
             if exist(filestartingconfiguration,'file')
                 load(filestartingconfiguration,'p','pgp')
@@ -238,13 +301,13 @@ for ic=1 % loop over conditions
             p=startingPositions_lj(S);
             % if there is a potential precalculate the ghosts so that they 
             % can provide interaction with the reals
-            if S.potential~=0 
-                [p,~,idxgp]=ghostParticles_initialonly(S,p,GPMAT);
-                pgp=p(S.N+1:end,:);
-                p=p(1:S.N,:);
-                ptemp=[p;pgp];
-                S.Na=size(ptemp,1);
-            end
+            % if S.potential~=0 
+            %     [p,~,idxgp]=ghostParticles_initialonly(S,p,GPMAT);
+            %     pgp=p(S.N+1:end,:);
+            %     p=p(1:S.N,:);
+            %     ptemp=[p;pgp];
+            %     S.Na=size(ptemp,1);
+            % end
         end
         % ---
 
@@ -286,14 +349,11 @@ for ic=1 % loop over conditions
                     % extract potential displacements for reals
                     disppot=disppot(1:S.N,:);
                 else % NON-SBC conditions (PBC) -- ghost generation removed; use MIC instead
-                    freeghosts=0;
                     % GHOSTS REMOVED: ptemp should contain only real particles.
                     % Under MIC we evaluate pairwise displacements using
                     % minimum-image convention on the real particle list.
-                    ptemp = p; 
-                    S.Na = size(ptemp,1);
                     % compute potential displacements using ptemp (reals only)
-                    disppot=potential_displacements(ptemp,S.N,S.rc,H,S.esdiff,S.pot_clamp,C.kbT,S.stdx,S.timestep,freeghosts);
+                    disppot=potential_displacements_v2(p,S.N,S.rc,H,H_interpolant,S.esdiff,S.pot_clamp,S.kbT,S.stdx,S.timestep,0);
                 end
             end
             % --------------------------------------------------------------
@@ -725,24 +785,24 @@ for ic=1 % loop over conditions
             
             % --- SAVING TEMP FILE ---
             if (qs<1e4 && mod(log2(qs),1)==0) || mod(qs,1e4)==0
-                save(tempfilename,'C','EDGES','P','V','S','-v7.3')
+                save([output_folder,'\',tempfilename],'C','EDGES','P','V','S','-v7.3')
                 if P.pdf==1
-                    save(tempfilename,'PDFT','PDF','-append')
+                    save([output_folder,'\',tempfilename],'PDFT','PDF','-append')
                 end
                 if P.ssf==1
-                    save(tempfilename,'SSF','-append')
+                    save([output_folder,'\',tempfilename],'SSF','-append')
                 end
                 if P.cluster==1
-                    save(tempfilename,'CLUSTERS','DEGREES','-append')
+                    save([output_folder,'\',tempfilename],'CLUSTERS','DEGREES','-append')
                 end
                 if P.dens==1
-                    save(tempfilename,'DCOMP','-append')
+                    save([output_folder,'\',tempfilename],'DCOMP','-append')
                 end
                 if P.equipartition==1
-                    save(tempfilename,'EQUIP','-append')
+                    save([output_folder,'\',tempfilename],'EQUIP','-append')
                 end
                 if P.exvol==1
-                    save(tempfilename,'AV','-append')
+                    save([output_folder,'\',tempfilename],'AV','-append')
                 end
             end
             % ---
@@ -751,22 +811,22 @@ for ic=1 % loop over conditions
     end
     save([output_folder,'\',filename],'C','EDGES','P','V','S','-v7.3')
     if P.pdf==1
-        save(filename,'PDFT','DS','PDF','-append')
+        save([output_folder,'\',filename],'PDFT','DS','PDF','-append')
     end
     if P.ssf==1
-        save(filename,'SSF','-append')
+        save([output_folder,'\',filename],'SSF','-append')
     end
     if P.cluster==1
-        save(filename,'CLUSTERS','DEGREES','-append')
+        save([output_folder,'\',filename],'CLUSTERS','DEGREES','-append')
     end
     if P.dens==1
-        save(filename,'DCOMP','-append')
+        save([output_folder,'\',filename],'DCOMP','-append')
     end
     if P.equipartition==1
-        save(filename,'EQUIP','-append')
+        save([output_folder,'\',filename],'EQUIP','-append')
     end
     if P.exvol==1
-        save(filename,'AV','-append')
+        save([output_folder,'\',filename],'AV','-append')
     end
     if isfile(tempfilename)
         delete(tempfilename);

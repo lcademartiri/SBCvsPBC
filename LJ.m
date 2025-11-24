@@ -32,7 +32,7 @@ C.hydrationlayer=2.5e-10;
 %% OPTIONAL SWITCHES
 
 P.pdf=1;
-P.ssf=1;
+P.ssf=0;
 P.dens=0;
 P.equipartition=0;
 P.cluster=0;
@@ -89,7 +89,7 @@ GPMAT=ghostparticlematrix();
 
 %% SIMULATION EXECUTION
 
-for ic=1 % loop over conditions
+for ic=5 % loop over conditions
     
     if CONDS.alpha(ic,1)==0
         continue
@@ -164,7 +164,95 @@ for ic=1 % loop over conditions
         % for cubic PBC use diag(L,L,L) for MIC transforms
         L = 2*S.br;
         S.fcc.A = diag([L,L,L]);
-        S.fcc.invA = diag([1/L,1/L,1/L]);
+        S.fcc.invA = diag([1/L,1/L,1/L]); 
+    end
+    % --- CELL LIST SETUP (Half-Shell Logic) ---
+    if S.bc==2 || S.bc==3
+        
+        % 1. Define Grid Size
+        if S.bc==2 % Cubic
+            cellsize = S.rc;
+            ncell = max(1, floor(2*S.br/cellsize));
+            cellsize = 2*S.br/ncell;
+        elseif S.bc==3 % FCC
+            frac_cut = norm(S.fcc.invA * [S.rc 0 0].');
+            ncell = max(1, floor(1/frac_cut));
+            cellsize = 1/ncell;
+        end
+        S.cellsize = cellsize;
+        S.ncell = ncell;
+
+        % 2. Define 13 Half-Shell Offsets (Forward Neighbors)
+        neighbor_offsets = [
+            1,  0,  0;   1,  1,  0;   0,  1,  0;  -1,  1,  0; % Z=0 (4)
+            1,  0,  1;   1,  1,  1;   0,  1,  1;  -1,  1,  1; % Z=1 (9)
+           -1,  0,  1;  -1, -1,  1;   0, -1,  1;   1, -1,  1;   0,  0,  1
+        ];
+        
+        % 3. Precompute Linear Indices (PBC Wrapping) - FIXED
+        neighbor_linear = cell(13,1);
+        
+        % Generate subscripts for ALL cells (1 to N^3)
+        all_ids = (1:ncell^3)';
+        [cx, cy, cz] = ind2sub([ncell, ncell, ncell], all_ids);
+        
+        for k = 1:13
+            dx = neighbor_offsets(k,1);
+            dy = neighbor_offsets(k,2);
+            dz = neighbor_offsets(k,3);
+        
+            % Apply shift
+            nx = cx + dx;
+            ny = cy + dy;
+            nz = cz + dz;
+            
+            % Wrap indices 1..ncell (Periodic Boundary)
+            % (x-1 mod N) + 1 formula handles the 1-based indexing correctly
+            nx = mod(nx - 1, ncell) + 1;
+            ny = mod(ny - 1, ncell) + 1;
+            nz = mod(nz - 1, ncell) + 1;
+            
+            % Convert back to linear index
+            % Note: ind2sub/sub2ind order is X, Y, Z if we define dims that way.
+            % Manual calc ensures consistency with accumarray logic later.
+            % Format: x + (y-1)*N + (z-1)*N^2
+            lin_idx = nx + ncell*(ny-1) + ncell*ncell*(nz-1);
+            
+            neighbor_linear{k} = lin_idx;
+        end
+        S.neighbor_linear = neighbor_linear;
+        clear nx ny nz dx dy dz SX SY SZ neighbor_offsets neighbor_linear
+    elseif S.bc==4
+        % --- Half-Shell Neighbor Offsets (13 neighbors) ---
+        % (Ensure 'neighbor_offsets' is defined with the 13 rows from previous chat)
+        
+        % Precompute neighbor_linear for BB but mark out-of-range as 0
+        all_ids = (1:ncell^3)';
+        cz = floor((all_ids-1) / (ncell*ncell)) + 1;
+        remainder = all_ids - (cz-1)*ncell*ncell;
+        cy = floor((remainder-1) / ncell) + 1;
+        cx = remainder - (cy-1)*ncell - (cz-1)*ncell*ncell;
+        
+        % Initialize with 13 rows (not 27)
+        neighbor_linear = zeros(13, ncell^3);
+        
+        for k = 1:13
+            dx = neighbor_offsets(k,1);
+            dy = neighbor_offsets(k,2);
+            dz = neighbor_offsets(k,3);
+            nx = cx + dx;
+            ny = cy + dy;
+            nz = cz + dz;
+        
+            % Check bounds (No wrapping for BB)
+            valid = nx>=1 & nx<=ncell & ny>=1 & ny<=ncell & nz>=1 & nz<=ncell;
+            
+            lin = zeros(size(cx));
+            lin(valid) = nx(valid) + ncell*(ny(valid)-1) + ncell*ncell*(nz(valid)-1);
+            neighbor_linear(k,:) = lin;
+        end
+        S.neighbor_linear = neighbor_linear;
+        clear nx ny nz dx dy dz SX SY SZ neighbor_offsets neighbor_linear valid lin all_ids remainder cx cy cz
     end
     IDlist=double(linspace(1,S.N,S.N)'); % id list for all particles in the boundary to use when the position matrix 'p' is rebuilt at the beginning of every time step
     % ---
@@ -186,7 +274,7 @@ for ic=1 % loop over conditions
 
         % --- MONTECARLO CLAMP DETERMINATION ---
         if S.potential~=0
-            S.pot_clamp=mcdClamp(P.nodisp,S.rp,DISP,S.esdiff,S.timestep,H,C.kbT);            
+            S.pot_clamp=mcdClamp(P.nodisp,DISP,S.esdiff,S.timestep,H(H(:,1) >= 0.8 * S.pot_sigma, :),C.kbT);            
         end
         % ---
 
@@ -217,7 +305,7 @@ for ic=1 % loop over conditions
         % --- STARTING POSITIONS & DETERMINING SBC RADIAL DISPLACEMENT ASYMMETRY CORRECTION ---
         if S.bc==1
             if S.potential==1, potname='lj'; elseif S.potential==2, potname='wca'; else potname='hs'; end
-            filestartingconfiguration = sprintf(['START_SBC_%s_%.0e_%.0e_%.0f_%.1f_%.1e.mat'],...
+            filestartingconfiguration = sprintf('START_SBC_%s_%.0e_%.0e_%.0f_%.1f_%.1e.mat',...
                         potname,S.rp,S.phi,S.N,S.pot_epsilon/S.kbT,S.pot_sigma);
             if exist(filestartingconfiguration,'file')
                 load(filestartingconfiguration,'p','pgp')
@@ -236,15 +324,6 @@ for ic=1 % loop over conditions
             % ---
         else
             p=startingPositions_lj(S);
-            % if there is a potential precalculate the ghosts so that they 
-            % can provide interaction with the reals
-            if S.potential~=0 
-                [p,~,idxgp]=ghostParticles_initialonly(S,p,GPMAT);
-                pgp=p(S.N+1:end,:);
-                p=p(1:S.N,:);
-                ptemp=[p;pgp];
-                S.Na=size(ptemp,1);
-            end
         end
         % ---
 
@@ -280,20 +359,17 @@ for ic=1 % loop over conditions
                 if S.bc==1 % SBC
                     freeghosts=1;
                     % calculate the displacement components due to potentials for all particles (reals and active ghosts)
-                    disppot=potential_displacements_v2(ptemp,S.Na,S.rc,H,H_interpolant,S.esdiff,S.pot_clamp,S.kbT,S.stdx,S.timestep,0);
+                    disppot=potential_displacements_v2(ptemp, S, H, H_interpolant, 0);
                     % extract potential displacements for active ghosts
                     disppotgp=disppot(S.N+1:end,:);
                     % extract potential displacements for reals
                     disppot=disppot(1:S.N,:);
                 else % NON-SBC conditions (PBC) -- ghost generation removed; use MIC instead
-                    freeghosts=0;
                     % GHOSTS REMOVED: ptemp should contain only real particles.
                     % Under MIC we evaluate pairwise displacements using
                     % minimum-image convention on the real particle list.
-                    ptemp = p; 
-                    S.Na = size(ptemp,1);
                     % compute potential displacements using ptemp (reals only)
-                    disppot=potential_displacements(ptemp,S.N,S.rc,H,S.esdiff,S.pot_clamp,C.kbT,S.stdx,S.timestep,freeghosts);
+                    disppot=potential_displacements_v2(p, S, H, H_interpolant, 0);
                 end
             end
             % --------------------------------------------------------------
