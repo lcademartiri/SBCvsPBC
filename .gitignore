@@ -11,3 +11,6 @@
 *.png
 *.pdf
 *.jpg
+
+# txt files
+*.txt

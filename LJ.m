@@ -18,8 +18,8 @@ addpath(output_folder)
 
 %% SERIES NAME
 
-filenamecollisionseries='SBCvsPBCtestAUTO_%d.mat';
-filenamecollisionseries_temp='SBCvsPBCtestAUTO_temp_%d.mat';
+filenamecollisionseries='SBCvsPBC_%d.mat';
+filenamecollisionseries_temp='SBCvsPBC_temp_%d.mat';
 
 %% FIXED PHYSICAL PARAMETERS
 
@@ -33,9 +33,9 @@ C.hydrationlayer=2.5e-10;
 
 P.pdf=1;
 P.ssf=1;
-P.dens=0;
-P.equipartition=0;
-P.cluster=0;
+P.dens=1;
+P.equipartition=1;
+P.cluster=1;
 P.exvol=0;
 P.correctionwindow=0; % window of the correction; 0 = no correction, 1e6 = S.rc, any other value X=X*S.rp;
 P.convergencemode=1; % 1  by step numbers, 2 by coll numbers, 3 by coll rates convergence
@@ -65,8 +65,8 @@ V.solvent_list=[1]; % list of solvents according to the library above
 V.phase_list=[2]; % list of phases according to the library above
 V.r_range=[1e-08,1e-8,1,1]; % min, max, steps of particle radii, then log switch (1 if logscale)
 V.N_range=[1000,1000,1,1]; % min, max, steps of particle numbers, then log switch (1 if logscale)
-V.phi_range=[0.40,0.40,1,1]; % min, max, steps of volume fractions, then log switch (1 if logscale)
-V.bc_range=[1,4,4]; % min, max, steps of boundary conditions (1:SBC; 2:PBC_cubic; 3:PBC_fcc; 4:BB)
+V.phi_range=[0.01,0.40,5,1]; % min, max, steps of volume fractions, then log switch (1 if logscale)
+V.bc_range=[1,3,3]; % min, max, steps of boundary conditions (1:SBC; 2:PBC_cubic; 3:PBC_fcc; 4:BB)
 V.bbm_range=[1,1,1]; % big box multiplier
 V.LJpot_range=[1,2,2]; % LJ potential trigger (0 = HS; 1 = LJ; 2 = WCA)
 V.T_range=[298.15,298.15,1]; % min, max, steps of temperatures
@@ -89,7 +89,7 @@ GPMAT=ghostparticlematrix();
 
 %% SIMULATION EXECUTION
 
-for ic=7 % loop over conditions
+for ic=1:6 % loop over conditions
     
     if CONDS.alpha(ic,1)==0
         continue
@@ -625,7 +625,7 @@ for ic=7 % loop over conditions
             end
             % -------------------------------------------------------------
 
-            % --- PROMOTION/DEMOTION IN SBC -----------------------
+            % --- PROMOTION/DEMOTION IN SBC - reset in BB/PBC -------------
             if S.bc==1
                 pgp0.p(pgp(:,4),:)=pgp(:,8:10);
                 p=p(1:S.N,8:10);
@@ -636,6 +636,8 @@ for ic=7 % loop over conditions
                 ghoststoswap=pgp0.p(idxrgswap,:);                
                 pgp0.p(idxrgswap,:)=realtoswap;
                 p(idxrgswap,:)=ghoststoswap;
+            else
+                p=p(1:S.N,8:10);
             end
             % -----------------------------------------------------------
 
@@ -669,7 +671,7 @@ for ic=7 % loop over conditions
                         % eliminate distances between identical particles
                         PDFD(PDFD(:,1)==0,:)=[];
                     else
-                        PDFD = mic_all_pair_displacements(p(:,8:10), S); % returns Mx3 array of minimum-image displacement vectors (M = N*(N-1))
+                        PDFD = mic_all_pair_displacements(p(:,1:3), S); % returns Mx3 array of minimum-image displacement vectors (M = N*(N-1))
                     end
                     
                     if S.bc==3
@@ -767,10 +769,6 @@ for ic=7 % loop over conditions
                 disp({filename,ic,irep,log10(qs),log10(qc)})
                 counterflag=1; 
             end
-            % ---
-            
-            % ---
-            p=p(1:S.N,8:10);
             % ---
 
             % --- SAVING TEMP FILE ---
