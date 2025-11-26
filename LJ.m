@@ -4,6 +4,7 @@ clear all
 close all
 rng('shuffle')
 warning('off', 'all');
+% debugging=true
 
 %% ADD PATHS TO STORAGE FOLDER
 
@@ -33,9 +34,9 @@ C.hydrationlayer=2.5e-10;
 
 P.pdf=1;
 P.ssf=1;
-P.dens=1;
-P.equipartition=1;
-P.cluster=1;
+P.dens=0;
+P.equipartition=0;
+P.cluster=0;
 P.exvol=0;
 P.correctionwindow=0; % window of the correction; 0 = no correction, 1e6 = S.rc, any other value X=X*S.rp;
 P.convergencemode=1; % 1  by step numbers, 2 by coll numbers, 3 by coll rates convergence
@@ -45,10 +46,10 @@ P.rfstepsforeffdiffest=10000; % number of random walk steps that I need to colle
 
 %% SIMULATION PARAMETERS
 
-P.nodisp=1e6;  % size of displacement library
+P.nodisp=1e7;  % size of displacement library
 P.reps=1; % number of replicates
-P.maxcoll=1e6; % minimum number of collisions to measure
-P.maxsteps=1e6; % maximum number of steps to make when doing pdfs
+P.maxcoll=1e7; % minimum number of collisions to measure
+P.maxsteps=1e7; % maximum number of steps to make when doing pdfs
 P.kuhnmultiplier=200; % multiplier of taur that is used to either include or exclude persistence
 P.kuhnmultiplierVACF=200; % multiplier of taur that is used to calculate autocorrelation
 P.convergencewindows=[10000,1000]; % number of timesteps over which to describe the evolution of k in time; number of steps over which to evaluate convergence
@@ -89,7 +90,7 @@ GPMAT=ghostparticlematrix();
 
 %% SIMULATION EXECUTION
 
-for ic=1:30 % loop over conditions
+for ic=1:6 % loop over conditions
     
     if CONDS.alpha(ic,1)==0
         continue
@@ -419,7 +420,7 @@ for ic=1:30 % loop over conditions
                     pgp_dir = pgp ./ pgp_norm;
                     v_rad_component = sum(dispgp .* pgp_dir, 2); % extract radial component to the total ghost displacement          
                     v_tan = dispgp - (v_rad_component .* pgp_dir); % subtract radial component from the 3D displacement
-                % apply displacements to active ghosts and reals
+                % apply displacements to active ghosts 
                     pgp2_temp = pgp + v_tan; % move ghosts tangentially creating tentative position
                 % correct real displacements by ASYMCORR
                     if S.pot_corr
@@ -630,7 +631,7 @@ for ic=1:30 % loop over conditions
                 pgp0.p(pgp(:,4),:)=pgp(:,8:10);
                 p=p(1:S.N,8:10);
                 pgp=pgp(:,8:10);
-                idxrgswap=vecnorm(p,2,2)>vecnorm(pgp0.p,2,2);
+                idxrgswap=vecnorm(p,2,2)>S.br;
                 % initialize start position array for the next timestep 
                 realtoswap=p(idxrgswap,:);
                 ghoststoswap=pgp0.p(idxrgswap,:);                
@@ -656,7 +657,7 @@ for ic=1:30 % loop over conditions
             if P.pdf==1
                 if mod(qs,P.pdfthermints)==0 | qs==1
                     if S.bc==1
-                        ppdf=[p;pgp];
+                        ppdf=p;
                     else
                         ppdf=p;
                     end
@@ -664,9 +665,9 @@ for ic=1:30 % loop over conditions
                     % GET DISTANCE DISTRIBUTION
                     % calculate all distance vectors
                     if S.bc==1 || S.bc==4
-                        PDFD(:,:,1)=(p(:,1)-p(:,1)'); 
-                        PDFD(:,:,2)=(p(:,2)-p(:,2)');
-                        PDFD(:,:,3)=(p(:,3)-p(:,3)');
+                        PDFD(:,:,1)=(ppdf(:,1)-ppdf(:,1)'); 
+                        PDFD(:,:,2)=(ppdf(:,2)-ppdf(:,2)');
+                        PDFD(:,:,3)=(ppdf(:,3)-ppdf(:,3)');
                         PDFD=reshape(PDFD,[],3);
                         % eliminate distances between identical particles
                         PDFD(PDFD(:,1)==0,:)=[];
@@ -795,6 +796,7 @@ for ic=1:30 % loop over conditions
             end
             % ---
             
+
         end
     end
     save([output_folder,'\',filename],'C','EDGES','P','V','S','-v7.3')

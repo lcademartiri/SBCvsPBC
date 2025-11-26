@@ -11,7 +11,7 @@ output_folder='D:\OneDrive - Università degli Studi di Parma\Manuel Dedola\outl
 data_folder = 'D:\GoogleDrive\LCL\Ludovico Cademartiri\Work\projects\ARBD\database';
 addpath(output_folder)
 addpath(data_folder)
-filenamecollisionseries='SBCvsPBC_temp_%d.mat';
+filenamecollisionseries='SBCvsPBC_TEST_temp_%d.mat';
 plottingenabled=1;
 
 %% ANALYSIS
@@ -47,7 +47,7 @@ for ic=conditionstoprocess
         AZS(:,i0)=PDFT{i0,4};
         ELS(:,i0)=PDFT{i0,5};
     end
-    clear PDFT
+    % clear PDFT
     % ---
     % --- means
     MEAN_AZ=mean(AZ,2);
