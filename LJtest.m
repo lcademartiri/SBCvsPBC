@@ -32,8 +32,8 @@ C.hydrationlayer=2.5e-10;
 
 %% OPTIONAL SWITCHES
 
-P.pdf=1;
-P.ssf=1;
+P.pdf=0;
+P.ssf=0;
 P.dens=0;
 P.equipartition=0;
 P.cluster=0;
@@ -90,7 +90,7 @@ GPMAT=ghostparticlematrix();
 
 %% SIMULATION EXECUTION
 
-for ic=6 % loop over conditions
+for ic=1:30 % loop over conditions
     
     if CONDS.alpha(ic,1)==0
         continue
@@ -373,17 +373,287 @@ for ic=6 % loop over conditions
             
             % ---- CALCULATION OF DISPLACEMENTS BY POTENTIALS --------------
             if S.potential~=0
+                ghostghost=0;
+                if S.bc==1
+                    ptemp=[p;pgp];
+                else
+                    ptemp=p;
+                end
+                if S.bc == 1
+                % ============= SBC branch ===========================
+                    [idx_list, ~] = rangesearch(ptemp, ptemp, S.rc);
+                    
+                    num_neighbors = cellfun(@numel, idx_list);
+                    coll2 = horzcat(idx_list{:})';
+                    coll1 = repelem((1:size(ptemp,1))', num_neighbors);
+                    mask = coll1 < coll2;
+                    if ghostghost == 0
+                        mask = mask & ~(coll1 > S.N & coll2 > S.N);
+                    end
+                    coll1 = coll1(mask);
+                    coll2 = coll2(mask);
+                    dists = ptemp(coll1,:) - ptemp(coll2,:);% SBC uses real-space displacement 
+                
+                elseif S.bc == 2
+                    % ============= Cubic PBC + MIC =======================
+                    % shift coordinates into [0, L)
+                    p_shift = mod(ptemp + 0.5*2*S.br, 2*S.br);
+                    
+                    cell_idx = floor(p_shift / S.cellsize) + 1;
+                    cell_id = cell_idx(:,1) + S.ncell*(cell_idx(:,2)-1) + S.ncell*S.ncell*(cell_idx(:,3)-1);
+                    
+                    % vectorized bucket: create a cell array where each cell contains indices
+                    % of particles that fall in that spatial cell
+                    tmp = accumarray(cell_id(:), (1:S.N)', [], @(x) {x});   % tmp is length max(cell_id)
+                    cell_particles = cell(S.ncell^3,1);                     % preallocate full list
+                    cell_particles(1:numel(tmp)) = tmp;                   % fill existing buckets
+                    % any remaining cell_particles entries remain empty {}
+                    coll1 = [];
+                    coll2 = [];
+                    
+                    for cid = 1:S.ncell^3
+                        plist = cell_particles{cid};
+                        if isempty(plist), continue; end
+                        % A. Self-Interaction (Particles within the same cell)
+                        % We need all unique pairs (i,j) where i < j within this list.
+                        n_p = length(plist);
+                        if n_p > 1
+                            % Generate pairs using nchoosek-like logic or simple meshgrid + mask
+                            % For speed in loops:
+                            % (If plist is 1:N, we want 1-2, 1-3... 2-3...)
+                            [I_self, J_self] = meshgrid(plist, plist);
+                            mask_self = I_self < J_self; % strictly less to avoid self and duplicates
+                            coll1 = [coll1; I_self(mask_self)];
+                            coll2 = [coll2; J_self(mask_self)];
+                        end
+                    
+                        % B. Neighbor Interactions (Half-Shell)
+                        % Check against the 13 forward neighbors
+                        for k = 1:13
+                            nid = S.neighbor_linear{k}(cid); % Ensure neighbor_linear is built for 13
+                            qlist = cell_particles{nid};
+                            if isempty(qlist), continue; end
+                    
+                            % Cross interaction: All p in Current vs All q in Neighbor
+                            % Since cells are distinct, we take ALL pairs (Cartesian product).
+                            % No need for i < j check because indices are in different cells.
+                            [I, J] = ndgrid(plist, qlist);
+                            coll1 = [coll1; I(:)];
+                            coll2 = [coll2; J(:)];
+                        end
+                    end
+                    
+                    % MIC displacement vectors
+                    d_raw = p(coll1,:) - p(coll2,:);
+                    dists = d_raw - 2*S.br .* round(d_raw./2*S.br);
+                    
+                
+                elseif S.bc == 3
+                    % ============= FCC PBC + MIC =========================
+                    
+                    % 1. Convert to Fractional Coordinates [0,1)
+                    f = (S.fcc.invA * p.').';
+                    % Wrap to unit cell (periodic boundaries)
+                    f = f - floor(f); 
+                    
+                    % 2. Bin into Cell Lists
+                    cell_idx = floor(f / S.cellsize) + 1;
+                    % Clamp to be safe against 1.0
+                    cell_idx = min(cell_idx, S.ncell); 
+                    
+                    cell_id = cell_idx(:,1) + S.ncell*(cell_idx(:,2)-1) + S.ncell*S.ncell*(cell_idx(:,3)-1);
+                    
+                    % Vectorized bucket creation
+                    tmp = accumarray(cell_id(:), (1:S.N)', [], @(x) {x});
+                    cell_particles = cell(S.ncell^3, 1);
+                    cell_particles(1:numel(tmp)) = tmp;
+                    
+                    coll1 = [];
+                    coll2 = [];
+                    
+                    % 3. Iterate over Cells
+                    for cid = 1:S.ncell^3
+                        plist = cell_particles{cid};
+                        if isempty(plist), continue; end
+                    
+                        % A. Self-Interaction (Particles within the same cell)
+                        % Get unique pairs (i < j) inside this cell
+                        n_p = length(plist);
+                        if n_p > 1
+                            [I_self, J_self] = meshgrid(plist, plist);
+                            mask_self = I_self < J_self; 
+                            coll1 = [coll1; I_self(mask_self)];
+                            coll2 = [coll2; J_self(mask_self)];
+                        end
+                    
+                        % B. Neighbor Interactions (Half-Shell)
+                        % Check against the 13 forward neighbors defined in Setup
+                        for k = 1:13
+                            nid = S.neighbor_linear{k}(cid);
+                            qlist = cell_particles{nid};
+                            if isempty(qlist), continue; end
+                    
+                            % Cross interaction: All p vs All q
+                            [I, J] = ndgrid(plist, qlist);
+                            coll1 = [coll1; I(:)];
+                            coll2 = [coll2; J(:)];
+                        end
+                    end
+                    
+                    % 4. MIC Fractional Displacement (Final Calculation)
+                    % (No 'mask' needed anymore because we eliminated duplicates logic-side)
+                    d_raw = p(coll1,:) - p(coll2,:);
+                    
+                    % Fractional displacement
+                    frac = (invA * d_raw.').';
+                    frac = frac - round(frac); % Apply MIC in fractional space
+                    
+                    % Back to Cartesian
+                    dists = (S.fcc.A * frac.').';
+
+                
+                elseif S.bc == 4
+                    % ============= Big BOX ===============================
+                     % --- BB setup ---
+                % L is the size of the Big Box (2*S.br)
+                L = 2 * S.br;
+                rc = S.rc;
+                
+                % Determine grid size
+                ncell = max(1, floor(L / rc));
+                cellsize = L / ncell;
+                
+                % 1. Shift positions to [0, L) frame
+                % Assuming 'p' is centered at 0 (range -br to +br)
+                p_shift = p + S.br; 
+                
+                % 2. Calculate Cell Indices
+                cell_sub = floor(p_shift / cellsize) + 1;
+                
+                % 3. Filter Valid Particles (Remove OOB)
+                % In BB, we simply ignore particles outside the grid.
+                valid_mask = all(cell_sub >= 1, 2) & all(cell_sub <= ncell, 2);
+                
+                % Only proceed with valid particles
+                valid_ids = find(valid_mask);
+                if isempty(valid_ids)
+                    coll1 = []; coll2 = []; dists = []; return;
+                end
+                
+                valid_sub = cell_sub(valid_mask, :);
+                
+                % 4. Linear Cell ID
+                cell_id = valid_sub(:,1) + ...
+                          ncell*(valid_sub(:,2)-1) + ...
+                          ncell*ncell*(valid_sub(:,3)-1);
+                
+                % 5. Vectorized Bucket Fill
+                % We map the *original* particle indices (valid_ids) into the cells
+                tmp = accumarray(cell_id, valid_ids, [ncell^3, 1], @(x) {x});
+                cell_particles = tmp;
+                
+                % 6. Build Pairs (Half-Shell Logic)
+                coll1 = [];
+                coll2 = [];
+                
+                % Iterate over non-empty cells
+                for cid = 1:ncell^3
+                    plist = cell_particles{cid};
+                    if isempty(plist), continue; end
+                
+                    % A. Self-Interaction (Particles within the same cell)
+                    % Get unique pairs (i < j) inside this cell
+                    n_p = length(plist);
+                    if n_p > 1
+                        [I_self, J_self] = meshgrid(plist, plist);
+                        mask_self = I_self < J_self; 
+                        coll1 = [coll1; I_self(mask_self)];
+                        coll2 = [coll2; J_self(mask_self)];
+                    end
+                
+                    % B. Neighbor Interactions (13 Forward Neighbors)
+                    % Check against the 13 forward neighbors defined in Setup
+                    for k = 1:13
+                        % Get the Neighbor ID from the precomputed table
+                        nid = S.neighbor_linear(k, cid); 
+                        
+                        % In BB, neighbor_linear has 0 for OOB neighbors (edges). Skip them.
+                        if nid == 0, continue; end
+                        
+                        qlist = cell_particles{nid};
+                        if isempty(qlist), continue; end
+                
+                        % Cross interaction: All p vs All q
+                        % Since we only visit each pair of cells once (forward), we take all pairs.
+                        [I, J] = ndgrid(plist, qlist);
+                        coll1 = [coll1; I(:)];
+                        coll2 = [coll2; J(:)];
+                    end
+                end
+                
+                % 7. Displacement (Euclidean, No MIC)
+                % No need to filter unique pairs anymore because Half-Shell logic guarantees uniqueness.
+                dists = p(coll1,:) - p(coll2,:);
+                end
+        
+                
+                % --- CASE 1: NO INTERACTIONS (Zero Force) ---
+                if isempty(coll1)
+                    % If pairs are empty, nobody is pushing anyone.
+                    % Return a zero displacement matrix of the correct size.
+                    
+                    disppot = zeros(size(ptemp,1), 3);
+                    return; 
+                end
+                
+                % N_total must cover all particles, even those with no collisions
+                N_total = max([max(coll1), max(coll2), size(ptemp,1)]);
+                rc = S.rc;
+                
+                dx = dists(:,1);
+                dy = dists(:,2);
+                dz = dists(:,3);
+                r  = sqrt(dx.^2 + dy.^2 + dz.^2);
+                
+                pot_r_min = H(1,1);
+                pot_r_max = H(end,1);
+                pot_F_min = H(1,2);
+                
+                r_clamped = min(max(r,pot_r_min), pot_r_max);
+                Fij = H_interpolant(r_clamped);
+                
+                Fij(r >= rc | r >= pot_r_max) = 0;
+                Fij(isnan(Fij) & r < pot_r_min) = pot_F_min;
+                Fij(isnan(Fij) & r >= pot_r_max) = 0;
+                
+                inv_r = 1./r;
+                inv_r(isinf(inv_r))=0;
+                fx = Fij .* dx .* inv_r;
+                fy = Fij .* dy .* inv_r;
+                fz = Fij .* dz .* inv_r;
+                
+                Fx = accumarray(coll1, fx, [N_total,1]) - accumarray(coll2, fx, [N_total,1]);
+                Fy = accumarray(coll1, fy, [N_total,1]) - accumarray(coll2, fy, [N_total,1]);
+                Fz = accumarray(coll1, fz, [N_total,1]) - accumarray(coll2, fz, [N_total,1]);
+                
+                totalforces = [Fx Fy Fz];
+                
+                % convert to displacements
+                potdisp = totalforces * (S.esdiff / S.kbT) * S.timestep;
+                
+                % clamp
+                maxstep = S.pot_clamp * sqrt(3) * S.stdx;
+                norms = vecnorm(potdisp,2,2);
+                overshoot = norms > maxstep;
+                if any(overshoot)
+                    potdisp(overshoot,:) = potdisp(overshoot,:) .* (maxstep ./ norms(overshoot));
+                end
+                disppot = potdisp;    
                 if S.bc==1 % SBC
-                    % calculate the displacement components due to potentials for all particles (reals and active ghosts)
-                    [disppot,coll1,coll2,dists]=potential_displacements_v2(ptemp, S, H, H_interpolant, 0);
                     % extract potential displacements for active ghosts
                     disppotgp=disppot(S.N+1:end,:);
                     % extract potential displacements for reals
                     disppot=disppot(1:S.N,:);
-                else % NON-SBC conditions (PBC)
-                    % Under MIC we evaluate pairwise displacements using
-                    % minimum-image convention on the real particle list.
-                    [disppot,coll1,coll2,dists]=potential_displacements_v2(p, S, H, H_interpolant, 0);
                 end
             end
             % --------------------------------------------------------------
