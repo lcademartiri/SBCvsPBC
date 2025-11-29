@@ -827,8 +827,8 @@ for ic=27
     if P.exvol==1
         save([output_folder,'\',filename],'AV','-append')
     end
-    if isfile(tempfilename)
-        delete(tempfilename);
+    if isfile([output_folder,'\',tempfilename])
+        delete([output_folder,'\',tempfilename]);
     end
     clear DATA DEGREES AV CLUSTERS PDF* SSF* DS
 end
