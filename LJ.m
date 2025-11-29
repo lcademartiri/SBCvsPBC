@@ -99,11 +99,7 @@ GPMAT=ghostparticlematrix();
 
 %% SIMULATION EXECUTION
 
-<<<<<<< HEAD
-for ic=3:4 % loop over conditions
-=======
-for ic=6 % loop over conditions
->>>>>>> adae6e273148373493d6d95960ccb5826a48908b
+for ic=27 % loop over conditions
     
     if CONDS.alpha(ic,1)==0
         continue
