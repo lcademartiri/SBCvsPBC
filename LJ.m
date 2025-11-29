@@ -90,7 +90,7 @@ GPMAT=ghostparticlematrix();
 
 %% SIMULATION EXECUTION
 
-for ic=6 % loop over conditions
+for ic=27 % loop over conditions
     
     if CONDS.alpha(ic,1)==0
         continue
@@ -801,7 +801,7 @@ for ic=6 % loop over conditions
     end
     save([output_folder,'\',filename],'C','EDGES','P','V','S','-v7.3')
     if P.pdf==1
-        save([output_folder,'\',filename],'PDFT','DS','PDF','-append')
+        save([output_folder,'\',filename],'PDFT','PDF','-append')
     end
     if P.ssf==1
         save([output_folder,'\',filename],'SSF','-append')
