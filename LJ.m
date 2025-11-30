@@ -100,7 +100,7 @@ GPMAT=ghostparticlematrix();
 
 %% SIMULATION EXECUTION
 
-for ic=25
+for ic=26
     
     if CONDS.alpha(ic,1)==0
         continue
