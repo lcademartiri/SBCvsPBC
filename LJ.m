@@ -47,6 +47,7 @@ P.dens=0;
 P.equipartition=0;
 P.cluster=0;
 P.exvol=0;
+P.collkin=1;
 P.correctionwindow=0; % window of the correction; 0 = no correction, 1e6 = S.rc, any other value X=X*S.rp;
 P.convergencemode=1; % 1  by step numbers, 2 by coll numbers, 3 by coll rates convergence
 P.pdfbins=[180,90]; % number of bins for azimuth, elevation
@@ -99,7 +100,7 @@ GPMAT=ghostparticlematrix();
 
 %% SIMULATION EXECUTION
 
-for ic=10
+for ic=25
     
     if CONDS.alpha(ic,1)==0
         continue
@@ -150,7 +151,11 @@ for ic=10
     else
         S.correctionwindow=P.correctionwindow*S.rp;
     end
-    
+    if S.bc==2 || S.bc==3
+        [~, cmdout] = system('wmic cpu get L2CacheSize, L3CacheSize /value');
+        tokens = regexp(cmdout, '\d+', 'match');
+        S.cacheSizeMB = max(str2double(tokens))/1024;
+    end
     S.gtrig=S.rc;
     if S.bc==3 % THIS IF CONDITION IS VERIFIED AND CORRECT
         S.fcc.unitvecs=V.fcc_unitvecs;
@@ -176,110 +181,8 @@ for ic=10
         S.fcc.A = diag([L,L,L]);
         S.fcc.invA = diag([1/L,1/L,1/L]); 
     end
-    % --- CELL LIST SETUP (Half-Shell Logic) ---
-    if S.bc==2 || S.bc==3
-        
-        % 1. Define Grid Size
-        if S.bc==2 % Cubic
-            cellsize = S.rc;
-            ncell = max(1, floor(2*S.br/cellsize));
-            cellsize = 2*S.br/ncell;
-        elseif S.bc==3 % FCC
-            frac_cut = norm(S.fcc.invA * [S.rc 0 0].');
-            ncell = max(1, floor(1/frac_cut));
-            cellsize = 1/ncell;
-        end
-        S.cellsize = cellsize;
-        S.ncell = ncell;
-
-        % 2. Define 13 Half-Shell Offsets (Forward Neighbors)
-        neighbor_offsets = [
-            1,  0,  0;   1,  1,  0;   0,  1,  0;  -1,  1,  0; % Z=0 (4)
-            1,  0,  1;   1,  1,  1;   0,  1,  1;  -1,  1,  1; % Z=1 (9)
-           -1,  0,  1;  -1, -1,  1;   0, -1,  1;   1, -1,  1;   0,  0,  1
-        ];
-        
-        % 3. Precompute Linear Indices (PBC Wrapping) - FIXED
-        neighbor_linear = cell(13,1);
-        
-        % Generate subscripts for ALL cells (1 to N^3)
-        all_ids = (1:ncell^3)';
-        [cx, cy, cz] = ind2sub([ncell, ncell, ncell], all_ids);
-        
-        for k = 1:13
-            dx = neighbor_offsets(k,1);
-            dy = neighbor_offsets(k,2);
-            dz = neighbor_offsets(k,3);
-        
-            % Apply shift
-            nx = cx + dx;
-            ny = cy + dy;
-            nz = cz + dz;
-            
-            % Wrap indices 1..ncell (Periodic Boundary)
-            % (x-1 mod N) + 1 formula handles the 1-based indexing correctly
-            nx = mod(nx - 1, ncell) + 1;
-            ny = mod(ny - 1, ncell) + 1;
-            nz = mod(nz - 1, ncell) + 1;
-            
-            % Convert back to linear index
-            % Note: ind2sub/sub2ind order is X, Y, Z if we define dims that way.
-            % Manual calc ensures consistency with accumarray logic later.
-            % Format: x + (y-1)*N + (z-1)*N^2
-            lin_idx = nx + ncell*(ny-1) + ncell*ncell*(nz-1);
-            
-            neighbor_linear{k} = lin_idx;
-        end
-        S.neighbor_linear = neighbor_linear;
-        clear nx ny nz dx dy dz SX SY SZ neighbor_offsets neighbor_linear
+    clear nx ny nz dx dy dz SX SY SZ neighbor_offsets neighbor_linear valid lin all_ids remainder cx cy cz
     
-    elseif S.bc==4
-        % --- BIG BOX SETUP (Non-Periodic) ---
-        L = 2 * S.br;
-        rc = S.rc;
-        ncell = max(1, floor(L / rc));
-        cellsize = L / ncell;
-        S.cellsize = cellsize;
-        S.ncell = ncell;
-        
-        % 1. Define 13 Half-Shell Offsets (Forward Neighbors)
-        neighbor_offsets = [
-            1,  0,  0;   1,  1,  0;   0,  1,  0;  -1,  1,  0; % Z=0 (4)
-            1,  0,  1;   1,  1,  1;   0,  1,  1;  -1,  1,  1; % Z=1 (9)
-           -1,  0,  1;  -1, -1,  1;   0, -1,  1;   1, -1,  1;   0,  0,  1
-        ];
-        
-        % 2. Initialize neighbor lookup table
-        neighbor_linear = zeros(13, ncell^3);
-        
-        % 3. Generate subscripts for ALL cells (1 to N^3)
-        all_ids = (1:ncell^3)';
-        [cx, cy, cz] = ind2sub([ncell, ncell, ncell], all_ids);
-        
-        for k = 1:13
-            dx = neighbor_offsets(k,1);
-            dy = neighbor_offsets(k,2);
-            dz = neighbor_offsets(k,3);
-            
-            % Apply shift (No Wrapping!)
-            nx = cx + dx;
-            ny = cy + dy;
-            nz = cz + dz;
-            
-            % Valid Mask: Neighbor must be strictly inside the grid
-            valid = (nx >= 1 & nx <= ncell) & ...
-                    (ny >= 1 & ny <= ncell) & ...
-                    (nz >= 1 & nz <= ncell);
-            
-            % Assign valid neighbors (Keep 0 for OOB)
-            lin_idx = zeros(size(cx));
-            lin_idx(valid) = nx(valid) + ncell*(ny(valid)-1) + ncell*ncell*(nz(valid)-1);
-            
-            neighbor_linear(k, :) = lin_idx;
-        end
-        S.neighbor_linear = neighbor_linear;
-        clear nx ny nz dx dy dz SX SY SZ neighbor_offsets neighbor_linear valid lin all_ids remainder cx cy cz
-    end
     IDlist=double(linspace(1,S.N,S.N)'); % id list for all particles in the boundary to use when the position matrix 'p' is rebuilt at the beginning of every time step
     % ---
 
@@ -363,7 +266,8 @@ for ic=10
         counterflag=0; % flag to tell me when to output the sim state - without it, the simstate gets broadcasted too many times
         DEGREES{ic,irep}=zeros(100,1); % initialize the DEGREES cell array that stores the histogram of the node degrees of the clusters formed in the simulation
         CLUSTERS{ic,irep}=[]; % initialize the CLUSTERS cell array that stores the numbers of nodes (col 2), the number of edges (col 3) and the completeness (col 4) of ALL collision clusters occurring and the step at which they occur (col 1) 
-        EDGES{ic,irep}=[]; % initialize the EDGES cell array that stores the IDs of all colliders. This is essential when we are going to havce to look at the pair waiting times at low phi.
+        EDGES{ic,irep}=uint32(zeros(1e6,3)); % initialize the EDGES cell array that stores the IDs of all colliders. This is essential when we are going to havce to look at the pair waiting times at low phi.
+        qedges=1;
         AV{ic,irep}=[]; % accessible volume estimations;
         
         % ---- RUN UNTIL CONVERGENCE -----        
@@ -384,7 +288,7 @@ for ic=10
             if S.potential~=0
                 if S.bc==1 % SBC
                     % calculate the displacement components due to potentials for all particles (reals and active ghosts)
-                    [disppot,coll1,coll2,dists]=potential_displacements_v2(ptemp, S, H, H_interpolant, 0);
+                    disppot=potential_displacements_v13(ptemp, S, H, H_interpolant, 0);
                     % extract potential displacements for active ghosts
                     disppotgp=disppot(S.N+1:end,:);
                     % extract potential displacements for reals
@@ -392,7 +296,7 @@ for ic=10
                 else % NON-SBC conditions (PBC)
                     % Under MIC we evaluate pairwise displacements using
                     % minimum-image convention on the real particle list.
-                    [disppot,coll1,coll2,dists]=potential_displacements_v2(p, S, H, H_interpolant, 0);
+                    disppot=potential_displacements_v13(p, S, H, H_interpolant, 0,S.cacheSizeMB);
                 end
             end
             % --------------------------------------------------------------
@@ -465,161 +369,171 @@ for ic=10
             % --------------------------------------------------------------
 
             % ---- PROCESSING COLLISIONS
-            idxcoll=vecnorm(dists,2,2)<(2*S.rp);
-            if sum(idxcoll,'all')>0
-
-                % --- labeling individual particles to ensure only the right particles are considered
-                Nreal=size(p,1); % total number of particles (real + ghost)
-                p(:,11)=zeros(Nreal,1); % index to account for particles that are moved or not during a single step
-                if S.bc==1
-                    p(:,12:13)=ones(Nreal,2); % index to label the particles that are inside the boundary either real or ghosts)
-                    p(vecnorm(p(:,1:3),2,2)>(S.br+S.rp),12)=0; % col 12 becomes zero if initial positions are FULLY outside the box
-                    p(vecnorm(p(:,8:10),2,2)>(S.br+S.rp),13)=0; % col 13 becomes zero if final positions are FULLY outside the box
-                elseif S.bc==2
-                    p(:,12:13)=ones(Nreal,2); % index to label the particles that are inside the boundary either real or ghosts)
-                    p(sum(abs(p(:,1:3))>(S.br+S.rc),2)>0,12)=0; % col 12 becomes zero if initial positions are FULLY outside the box
-                    p(sum(abs(p(:,8:10))>(S.br+S.rc),2)>0,13)=0; % col 13 becomes zero if final positions are FULLY outside the box
-                elseif S.bc==3
-                    p(:,12:13)=ones(Nreal,2); % index to label the particles that are inside the boundary either real or ghosts)
-                    p(oob_fcc(p(:,1:3),S,-S.rc),12)=0; % col 12 becomes zero if initial positions are FULLY outside the box
-                    p(oob_fcc(p(:,8:10),S,-S.rc),13)=0; % col 13 becomes zero if final positions are FULLY outside the box
-                end
-                % ---
-                
-                flagcoll=1; % flag that makes me exit the collision analysis loop when no more valid collisions are detected; 1 - collisions are present; 2 - collisions have been processed but some might remain; 3 - collisions
-                edges=[]; % initialize list of collision types
-                while flagcoll>0 % repeat collider identification and motion until no collision remains                    
-                    % -- COLLISION CHECK AT THE BEGINNING OF EVERY LOOP except the first ----  
-                    if flagcoll==2 && S.potential==0  % avoid rechecking if this is the first cycle of collision detangling                        
-                        idxcoll=pdist(p(:,8:10))'-(2*S.rp)<0;
-                        if S.bc~=4 && (sum(idxcoll)==0)
-                            flagcoll=0;
-                            counterflag=0;
-                            break
-                        elseif S.bc==4 && (sum(idxcoll)==0 || isempty(colliders)==1)
-                            flagcoll=0;
-                            counterflag=0;
-                            break
-                        end
-                    elseif flagcoll==2 && S.potential~=0 % do not reprocess collisions in the presence of soft potentials
-                        counterflag=0;
-                        break
+            if P.collkin==1
+                dists=pdist(p(:,8:10))';
+                idxcoll=sign(2*S.rp-dists)+1; % calculate all distances, subtract them from 2r, and pick the sign. If -1 then distances>2r, if +1 then distance<2r. Then add 1.
+                if sum(idxcoll,'all')>0
+    
+                    % --- labeling individual particles to ensure only the right particles are considered
+                    Nreal=size(p,1); % total number of particles (real + ghost)
+                    p(:,11)=zeros(Nreal,1); % index to account for particles that are moved or not during a single step
+                    if S.bc==1
+                        p(:,12:13)=ones(Nreal,2); % index to label the particles that are inside the boundary either real or ghosts)
+                        p(vecnorm(p(:,1:3),2,2)>(S.br+S.rp),12)=0; % col 12 becomes zero if initial positions are FULLY outside the box
+                        p(vecnorm(p(:,8:10),2,2)>(S.br+S.rp),13)=0; % col 13 becomes zero if final positions are FULLY outside the box
+                    elseif S.bc==2
+                        p(:,12:13)=ones(Nreal,2); % index to label the particles that are inside the boundary either real or ghosts)
+                        p(sum(abs(p(:,1:3))>(S.br+S.rc),2)>0,12)=0; % col 12 becomes zero if initial positions are FULLY outside the box
+                        p(sum(abs(p(:,8:10))>(S.br+S.rc),2)>0,13)=0; % col 13 becomes zero if final positions are FULLY outside the box
+                    elseif S.bc==3
+                        p(:,12:13)=ones(Nreal,2); % index to label the particles that are inside the boundary either real or ghosts)
+                        p(oob_fcc(p(:,1:3),S,-S.rc),12)=0; % col 12 becomes zero if initial positions are FULLY outside the box
+                        p(oob_fcc(p(:,8:10),S,-S.rc),13)=0; % col 13 becomes zero if final positions are FULLY outside the box
                     end
-                    % ---
-
-                    % --- IDENTIFY THE COLLIDERS
-                    coll1=coll1(idxcoll,:);
-                    coll2=coll2(idxcoll,:);
                     % ---
                     
-                    % --- MAKE A LIST OF THE COLLIDERS (position of collider #1, position of collider #2, row# of collider #1 and #2), theN identify those who collide OUTSIDE the boundary, and then eliminate the midpoint coordinates from the collider matrix (for economy) ---
-                    if S.bc~=4
-                        % COL9=RESET BIT FOR COLLIDER 1 (1 means particle HAS BEEN RESET ALREADY)
-                        % COL10=RESET BIT FOR COLLIDER 2 (1 means particle HAS BEEN RESET ALREADY)
-                        % COL11=START-OF-STEP-OOB BIT FOR COLLIDER 1 (0 means particle WAS OOB at start of step)
-                        % COL12=START-OF-STEP-OOB BIT FOR COLLIDER 2 (0 means particle WAS OOB at start of step)
-                        % COL13=END-OF-STEP-OOB BIT FOR COLLIDER 1 (0 means particle IS OOB at end of step)
-                        % COL14=END-OF-STEP-OOB BIT FOR COLLIDER 2 (0 means particle IS OOB at end of step)
-                        colliders=[p(coll1,8:10),p(coll2,8:10),coll1,coll2,p(coll1,11),p(coll2,11),p(coll1,12),p(coll2,12),p(coll1,13),p(coll2,13)];
-                        % identify all collisions among non-reals
-                        collidersnonreal=colliders(:,7)>S.N & colliders(:,8)>S.N;
-                        % if the first sweep through the collisions has
-                        % been done and you find that the only collisions
-                        % left are those among non-reals then proceed. This
-                        % implies that some unresolved collisions will stay
-                        % unresolved which is necessary. Remember that
-                        % ghosts will never collide if their reals are not
-                        % colliding but compensators will collide with
-                        % ghosts and with each other. The compensators are
-                        % repelling each other by HS at the beginning of
-                        % cycle so that shouldn't be an issue. but the
-                        % collisions between ghosts and compensators have
-                        % to be ignored to avoid spooky action at a
-                        % distance. In the case of soft potentials the
-                        % compensators will still move away from ghosts.
-                        if flagcoll==2 & sum(collidersnonreal)==size(colliders,1)
+                    flagcoll=1; % flag that makes me exit the collision analysis loop when no more valid collisions are detected; 1 - collisions are present; 2 - collisions have been processed but some might remain; 3 - collisions
+                    edges=[]; % initialize list of collision types
+                    while flagcoll>0 % repeat collider identification and motion until no collision remains                    
+                        % -- COLLISION CHECK AT THE BEGINNING OF EVERY LOOP except the first ----  
+                        if flagcoll==2 && S.potential==0  % avoid rechecking if this is the first cycle of collision detangling                        
+                            idxcoll=pdist(p(:,8:10))'-(2*S.rp)<0;
+                            if S.bc~=4 && (sum(idxcoll)==0)
+                                flagcoll=0;
+                                counterflag=0;
+                                break
+                            elseif S.bc==4 && (sum(idxcoll)==0 || isempty(colliders)==1)
+                                flagcoll=0;
+                                counterflag=0;
+                                break
+                            end
+                        elseif flagcoll==2 && S.potential~=0 % do not reprocess collisions in the presence of soft potentials
+                            counterflag=0;
                             break
                         end
-                    else
-                        colliders=[p(coll1,8:10),p(coll2,8:10),coll1,coll2,p(coll1,11),p(coll2,11)];
-                    end                    
-                    % ---
-
-                    % --- CALCULATE COLLISION MIDPOINTS 
-                    if S.bc==1
-                        mp=vecnorm(colliders(:,1:3)+0.5*(colliders(:,4:6)-colliders(:,1:3)),2,2); % midpoint calculation                     
-                        idxmp=mp>S.br; % index matrix of collisions occuring outside the boundary
-                    elseif S.bc==2 || S.bc==3
-                        % Under PBC (cubic or FCC), midpoint OOB checks are invalid.
-                        % MIC decides collisions entirely. Keep midpoint only for diagnostics.
-                        tempvector = colliders(:,4:6) - colliders(:,1:3);
-                        mp = colliders(:,1:3) + 0.5 * tempvector;  % midpoint (diagnostic only)
-                        idxmp = false(size(mp,1),1);               % no OOB rejections under PBC
-                    elseif S.bc==4
-                        tempvector=(colliders(:,4:6)-colliders(:,1:3));
-                        mp=colliders(:,1:3)+(tempvector./norm(tempvector).*(0.5*norm(tempvector))); % midpoint calculation
-                        idxmp=sum(abs(mp)>(S.br/S.bbm),2)>0; % index matrix of collisions occuring outside the boundary - which are excluded from consideration only in the final count.
-                    end
-                    % IDS{qs,1}=[IDS{qs,1};colliders(:,7:8)];
-                    if sum(sum(colliders(~idxmp,9:10),2)==2)>0 % edge case check to see if sim finds collisions between particles that already have been moved back
-                        disp('houston, we have a problem')
-                        pause
-                    end
-                    % if the first sweep through the collisions has been
-                    % done and all the collisions left are outside the
-                    % boundary (even if they involve reals), then you
-                    % proceed. I am not sure if this is unavoidable but it
-                    % seems it is. I guess it weakens the compensation by
-                    % compensators in the case of HS potentials but it is
-                    % an edge case to avoid breaking the overlap resolution
-                    if flagcoll==2 & isempty(colliders(~idxmp,:))==1
-                        flagcoll=0;
-                        counterflag=0;
-                        break
-                    end
-                    % ---
-
-                    % --- MOVE BACK COLLIDERS --- code check OK
-                    if isempty(colliders)==0
-                        % --- store info about the OVERLAPPERS whether in HS or LJ
-                        ids=colliders(:,7:8); % row #s of the two colliders (columns) in each two-body collisions (rows)                        
-                        edges=[edges;ids(~idxmp,:)]; % add to the iterative list of the row #s of the two colliders (columns) in each two-body collisions (rows), UNLESS the collisions happened outside the boundary. Therefore 'edges' works as a list of the valid collisions that accumulate during a time-step
-                        % --- move back all particles (real and associated ghost) that have collided if on HS 
-                        if S.potential==0
-                            if ~isempty(ids)
-                                if S.bc~=4
-                                    ids=nonzeros(unique(reshape(ids,[numel(ids) 1]))); % reshape as column vector
-                                    ids=unique(nonzeros(p(ids,4))); % use the row #s of all colliders to find out all the particle IDS of the colliders.  
-                                    ids=find(ismember(p(:,4),ids)); % use the particle IDS to find all particles (i.e., the row #s), real or ghost whose ID matches that of a collider.
-                                end
-                                p(ids,8:10)=p(ids,1:3); % move those back
-                                p(ids,11)=1;% update the list of moved particles
-                                if S.bc~=4
-                                    p(ids,13)=p(ids,12); % the columns indicating out of boundary must be updated as well.
+                        % ---
+    
+                        % --- IDENTIFY THE COLLIDERS
+                        Nreal=size(p,1);
+                        collpairs=find(idxcoll);
+                        bin=ceil(-0.5*sqrt(8*nchoosek(Nreal,2)-8*collpairs+1)+Nreal-0.5);
+                        coll1=bin;
+                        binedges=0.5*(Nreal-bin)-0.5*(Nreal-bin).^2+nchoosek(Nreal,2);
+                        coll2=Nreal-binedges+collpairs;
+                        % ---
+                        
+                        % --- MAKE A LIST OF THE COLLIDERS (position of collider #1, position of collider #2, row# of collider #1 and #2), theN identify those who collide OUTSIDE the boundary, and then eliminate the midpoint coordinates from the collider matrix (for economy) ---
+                        if S.bc~=4
+                            % COL9=RESET BIT FOR COLLIDER 1 (1 means particle HAS BEEN RESET ALREADY)
+                            % COL10=RESET BIT FOR COLLIDER 2 (1 means particle HAS BEEN RESET ALREADY)
+                            % COL11=START-OF-STEP-OOB BIT FOR COLLIDER 1 (0 means particle WAS OOB at start of step)
+                            % COL12=START-OF-STEP-OOB BIT FOR COLLIDER 2 (0 means particle WAS OOB at start of step)
+                            % COL13=END-OF-STEP-OOB BIT FOR COLLIDER 1 (0 means particle IS OOB at end of step)
+                            % COL14=END-OF-STEP-OOB BIT FOR COLLIDER 2 (0 means particle IS OOB at end of step)
+                            colliders=[p(coll1,8:10),p(coll2,8:10),coll1,coll2,p(coll1,11),p(coll2,11),p(coll1,12),p(coll2,12),p(coll1,13),p(coll2,13)];
+                            % identify all collisions among non-reals
+                            collidersnonreal=colliders(:,7)>S.N & colliders(:,8)>S.N;
+                            % if the first sweep through the collisions has
+                            % been done and you find that the only collisions
+                            % left are those among non-reals then proceed. This
+                            % implies that some unresolved collisions will stay
+                            % unresolved which is necessary. Remember that
+                            % ghosts will never collide if their reals are not
+                            % colliding but compensators will collide with
+                            % ghosts and with each other. The compensators are
+                            % repelling each other by HS at the beginning of
+                            % cycle so that shouldn't be an issue. but the
+                            % collisions between ghosts and compensators have
+                            % to be ignored to avoid spooky action at a
+                            % distance. In the case of soft potentials the
+                            % compensators will still move away from ghosts.
+                            if flagcoll==2 & sum(collidersnonreal)==size(colliders,1)
+                                break
+                            end
+                        else
+                            colliders=[p(coll1,8:10),p(coll2,8:10),coll1,coll2,p(coll1,11),p(coll2,11)];
+                        end                    
+                        % ---
+    
+                        % --- CALCULATE COLLISION MIDPOINTS 
+                        if S.bc==1
+                            mp=vecnorm(colliders(:,1:3)+0.5*(colliders(:,4:6)-colliders(:,1:3)),2,2); % midpoint calculation                     
+                            idxmp=mp>S.br; % index matrix of collisions occuring outside the boundary
+                        elseif S.bc==2 || S.bc==3
+                            % Under PBC (cubic or FCC), midpoint OOB checks are invalid.
+                            % MIC decides collisions entirely. Keep midpoint only for diagnostics.
+                            tempvector = colliders(:,4:6) - colliders(:,1:3);
+                            mp = colliders(:,1:3) + 0.5 * tempvector;  % midpoint (diagnostic only)
+                            idxmp = false(size(mp,1),1);               % no OOB rejections under PBC
+                        elseif S.bc==4
+                            tempvector=(colliders(:,4:6)-colliders(:,1:3));
+                            mp=colliders(:,1:3)+(tempvector./norm(tempvector).*(0.5*norm(tempvector))); % midpoint calculation
+                            idxmp=sum(abs(mp)>(S.br/S.bbm),2)>0; % index matrix of collisions occuring outside the boundary - which are excluded from consideration only in the final count.
+                        end
+                        % IDS{qs,1}=[IDS{qs,1};colliders(:,7:8)];
+                        if sum(sum(colliders(~idxmp,9:10),2)==2)>0 % edge case check to see if sim finds collisions between particles that already have been moved back
+                            disp('houston, we have a problem')
+                            pause
+                        end
+                        % if the first sweep through the collisions has been
+                        % done and all the collisions left are outside the
+                        % boundary (even if they involve reals), then you
+                        % proceed. I am not sure if this is unavoidable but it
+                        % seems it is. I guess it weakens the compensation by
+                        % compensators in the case of HS potentials but it is
+                        % an edge case to avoid breaking the overlap resolution
+                        if flagcoll==2 & isempty(colliders(~idxmp,:))==1
+                            flagcoll=0;
+                            counterflag=0;
+                            break
+                        end
+                        % ---
+    
+                        % --- MOVE BACK COLLIDERS --- code check OK
+                        if isempty(colliders)==0
+                            % --- store info about the OVERLAPPERS whether in HS or LJ
+                            ids=colliders(:,7:8); % row #s of the two colliders (columns) in each two-body collisions (rows)                        
+                            edges=[edges;ids(~idxmp,:)]; % add to the iterative list of the row #s of the two colliders (columns) in each two-body collisions (rows), UNLESS the collisions happened outside the boundary. Therefore 'edges' works as a list of the valid collisions that accumulate during a time-step
+                            % --- move back all particles (real and associated ghost) that have collided if on HS 
+                            if S.potential==0
+                                if ~isempty(ids)
+                                    if S.bc~=4
+                                        ids=nonzeros(unique(reshape(ids,[numel(ids) 1]))); % reshape as column vector
+                                        ids=unique(nonzeros(p(ids,4))); % use the row #s of all colliders to find out all the particle IDS of the colliders.  
+                                        ids=find(ismember(p(:,4),ids)); % use the particle IDS to find all particles (i.e., the row #s), real or ghost whose ID matches that of a collider.
+                                    end
+                                    p(ids,8:10)=p(ids,1:3); % move those back
+                                    p(ids,11)=1;% update the list of moved particles
+                                    if S.bc~=4
+                                        p(ids,13)=p(ids,12); % the columns indicating out of boundary must be updated as well.
+                                    end
                                 end
                             end
+                            flagcoll=2;
+                            % ---
                         end
-                        flagcoll=2;
                         % ---
                     end
                     % ---
-                end
-                % ---
-
-                % --- MANY-BODY COLLISIONS ANALYSIS and COLLISION DATA STORAGE ---
-                % this part takes place after all collisions have been processed and no more collisions are found.
-                % The 'edges' variable contains the pairs of particles that have collided during this timestep
-                if isempty(edges)==0
-                    tempedges=[ones(size(edges,1),1).*qs,edges];
-                    qc=qc+size(tempedges,1);
-                    EDGES{ic,irep}=[EDGES{ic,irep};tempedges];
-                    if P.cluster==1
-                        [degrees,gq,twobodycolls]=graphAnalysis(edges,qs);
-                        DEGREES{ic,irep}(1:length(degrees),1)=DEGREES{ic,irep}(1:length(degrees),:)+degrees; % store degree information in 'DEGREES' cell array
-                        CLUSTERS{ic,irep}=[CLUSTERS{ic,irep};gq]; % store cluster information in 'CLUSTERS' variable  
+    
+                    % --- MANY-BODY COLLISIONS ANALYSIS and COLLISION DATA STORAGE ---
+                    % this part takes place after all collisions have been processed and no more collisions are found.
+                    % The 'edges' variable contains the pairs of particles that have collided during this timestep
+                    if isempty(edges)==0
+                        tempedges=[ones(size(edges,1),1).*qs,edges];
+                        qc=qc+size(tempedges,1);
+                        if qc>size(EDGES{ic,irep},1)
+                            EDGES{ic,irep}(qc+1e6,1)=0;
+                        end
+                        EDGES{ic,irep}(qc-size(tempedges,1)+1:qc,:)=tempedges;
+                        if P.cluster==1
+                            [degrees,gq,twobodycolls]=graphAnalysis(edges,qs);
+                            DEGREES{ic,irep}(1:length(degrees),1)=DEGREES{ic,irep}(1:length(degrees),:)+degrees; % store degree information in 'DEGREES' cell array
+                            CLUSTERS{ic,irep}=[CLUSTERS{ic,irep};gq]; % store cluster information in 'CLUSTERS' variable  
+                        end
                     end
+                    % ---
                 end
-                % ---
             end
             % ----
 
