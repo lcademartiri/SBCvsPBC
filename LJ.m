@@ -152,7 +152,7 @@ for ic=12
     if S.bc==2 || S.bc==3
         [~, cmdout] = system('wmic cpu get L2CacheSize, L3CacheSize /value');
         tokens = regexp(cmdout, '\d+', 'match');
-        S.cacheSizeMB = max(str2double(tokens))/1024;
+        S.cacheSizeMB = (max(str2double(tokens))/1024)/feature('numCores');
     end
     S.gtrig=S.rc;
     if S.bc==3 % THIS IF CONDITION IS VERIFIED AND CORRECT
