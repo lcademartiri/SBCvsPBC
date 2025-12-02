@@ -752,3 +752,4 @@ for ic=26
     end
     clear DATA DEGREES AV CLUSTERS PDF* SSF* DS
 end
+clearvars -except S V P C
