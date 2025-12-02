@@ -59,7 +59,7 @@ P.rfstepsforeffdiffest=10000; % number of random walk steps that I need to colle
 P.nodisp=1e7;  % size of displacement library
 P.reps=1; % number of replicates
 P.maxcoll=1e7; % minimum number of collisions to measure
-P.maxsteps=1e7; % maximum number of steps to make when doing pdfs
+P.maxsteps=1e6; % maximum number of steps to make when doing pdfs
 P.kuhnmultiplier=200; % multiplier of taur that is used to either include or exclude persistence
 P.kuhnmultiplierVACF=200; % multiplier of taur that is used to calculate autocorrelation
 P.convergencewindows=[10000,1000]; % number of timesteps over which to describe the evolution of k in time; number of steps over which to evaluate convergence
@@ -100,7 +100,7 @@ GPMAT=ghostparticlematrix();
 
 %% SIMULATION EXECUTION
 
-for ic=26
+for ic=21
     
     if CONDS.alpha(ic,1)==0
         continue
