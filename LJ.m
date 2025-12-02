@@ -10,21 +10,23 @@ warning('off', 'all');
 
 if exist('D:\GoogleDrive\LCL\Ludovico Cademartiri\Work\projects\ARBD\database','dir')
     data_folder = 'D:\GoogleDrive\LCL\Ludovico Cademartiri\Work\projects\ARBD\database';
-else
+elseif exist('G:\My Drive\LCL\Ludovico Cademartiri\Work\projects\ARBD\database','dir')
     data_folder = 'G:\My Drive\LCL\Ludovico Cademartiri\Work\projects\ARBD\database';
+elseif exist('D:\GDrive\LCL\Ludovico Cademartiri\Work\projects\ARBD\database','dir')
+    data_folder = 'D:\GDrive\LCL\Ludovico Cademartiri\Work\projects\ARBD\database';
 end
 if exist('D:\OneDrive - Università degli Studi di Parma\Manuel Dedola\outlines\spherical boundary conditions for brownian dynamics simulations\submissions\JChemPhys\revision\code\freeghost_nocorr','dir')
     output_folder='D:\OneDrive - Università degli Studi di Parma\Manuel Dedola\outlines\spherical boundary conditions for brownian dynamics simulations\submissions\JChemPhys\revision\code\freeghost_nocorr';
-else
+elseif exist('C:\Users\lcade\OneDrive - Università degli Studi di Parma\Manuel Dedola\outlines\spherical boundary conditions for brownian dynamics simulations\submissions\JChemPhys\revision\code\freeghost_nocorr','dir')
     output_folder='C:\Users\lcade\OneDrive - Università degli Studi di Parma\Manuel Dedola\outlines\spherical boundary conditions for brownian dynamics simulations\submissions\JChemPhys\revision\code\freeghost_nocorr';
+elseif exist('D:\OneDrive - Università degli Studi di Parma\Manuel Dedola\outlines\spherical boundary conditions for brownian dynamics simulations\submissions\JChemPhys\revision\code\freeghost_nocorr','dir')
+    output_folder='D:\OneDrive - Università degli Studi di Parma\Manuel Dedola\outlines\spherical boundary conditions for brownian dynamics simulations\submissions\JChemPhys\revision\code\freeghost_nocorr';
 end
     
-    toolbox_folder = '..\ARBD_toolbox';
+toolbox_folder = '..\ARBD_toolbox';
 addpath(data_folder)
 addpath(toolbox_folder)
 addpath(output_folder)
-% data_folder = 'C:\Users\lcade\OneDrive - Università degli Studi di Parma\Manuel Dedola\outlines\failure of Smoluchowskis collisional model in molecular systems\data\code\dt_rescaling_final';
-% addpath(data_folder)
 
 %% SERIES NAME
 
@@ -94,13 +96,9 @@ disp('collection and estimation of effective diffusivities for the conditions to
 
 CONDS=effective_diffusivity(data_folder,CONDS,P,C);
 
-%% GHOST PARTICLE MATRIX 
-
-GPMAT=ghostparticlematrix();
-
 %% SIMULATION EXECUTION
 
-for ic=21
+for ic=12
     
     if CONDS.alpha(ic,1)==0
         continue
