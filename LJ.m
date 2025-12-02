@@ -696,8 +696,14 @@ for ic=26
             % ---
 
             % --- SAVING TEMP FILE ---
-            if (qs<1e4 && mod(log2(qs),1)==0) || mod(qs,1e4)==0
-                save([output_folder,'\',tempfilename],'C','EDGES','P','V','S','-v7.3')
+            if mod(log2(qs),1)==0
+                if ~isfile(tempfilename)
+                    % First time: Create the file with the core struct
+                    save([output_folder,'\',tempfilename], 'C', 'EDGES', 'P', 'V', 'S', '-v7.3');
+                else
+                    % File exists: Update core variables (Overwrite them in place)
+                    save([output_folder,'\',tempfilename], 'C', 'EDGES', 'P', 'V', 'S', '-append');
+                end
                 if P.pdf==1
                     save([output_folder,'\',tempfilename],'PDFT','PDF','-append')
                 end
