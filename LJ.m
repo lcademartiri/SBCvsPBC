@@ -98,7 +98,7 @@ CONDS=effective_diffusivity(data_folder,CONDS,P,C);
 
 %% SIMULATION EXECUTION
 
-for ic=12
+for ic=14
     
     if CONDS.alpha(ic,1)==0
         continue
