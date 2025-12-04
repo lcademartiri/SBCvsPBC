@@ -30,8 +30,8 @@ addpath(output_folder)
 
 %% SERIES NAME
 
-filenamecollisionseries='SBCvsPBC_%d.mat';
-filenamecollisionseries_temp='SBCvsPBC_temp_%d.mat';
+filenamecollisionseries='SBCvsPBC_v2_%d.mat';
+filenamecollisionseries_temp='SBCvsPBC_v2_temp_%d.mat';
 
 %% FIXED PHYSICAL PARAMETERS
 
@@ -50,6 +50,7 @@ P.equipartition=0;
 P.cluster=0;
 P.exvol=0;
 P.collkin=1;
+P.io_enabled=true;
 P.correctionwindow=0; % window of the correction; 0 = no correction, 1e6 = S.rc, any other value X=X*S.rp;
 P.convergencemode=1; % 1  by step numbers, 2 by coll numbers, 3 by coll rates convergence
 P.pdfbins=[180,90]; % number of bins for azimuth, elevation
@@ -98,7 +99,7 @@ CONDS=effective_diffusivity(data_folder,CONDS,P,C);
 
 %% SIMULATION EXECUTION
 
-for ic=18
+for ic=20
     
     if CONDS.alpha(ic,1)==0
         continue
@@ -111,7 +112,7 @@ for ic=18
 
     % --- continue if filename exists
     if exist(filename,'file')>0 
-       continue
+       % continue
     end
     % ---
 
@@ -207,7 +208,7 @@ for ic=18
 
         % ---- INITIALIZING PDF, SSF, DENSITY, EQUIPARTITION ---- 
         if P.pdf==1
-            PDF=pdf_initialization(S,P);
+            PDF=pdf_initialization(S,P,data_folder);
         end
         if P.ssf==1
             SSF=ssf_initialization(S);
@@ -726,27 +727,29 @@ for ic=18
 
         end
     end
-    save([output_folder,'\',filename],'C','EDGES','P','V','S','-v7.3')
-    if P.pdf==1
-        save([output_folder,'\',filename],'PDFT','PDF','-append')
-    end
-    if P.ssf==1
-        save([output_folder,'\',filename],'SSF','-append')
-    end
-    if P.cluster==1
-        save([output_folder,'\',filename],'CLUSTERS','DEGREES','-append')
-    end
-    if P.dens==1
-        save([output_folder,'\',filename],'DCOMP','-append')
-    end
-    if P.equipartition==1
-        save([output_folder,'\',filename],'EQUIP','-append')
-    end
-    if P.exvol==1
-        save([output_folder,'\',filename],'AV','-append')
-    end
-    if isfile([output_folder,'\',tempfilename])
-        delete([output_folder,'\',tempfilename]);
+    if P.io_enabled
+        save([output_folder,'\',filename],'C','EDGES','P','V','S','-v7.3')
+        if P.pdf==1
+            save([output_folder,'\',filename],'PDFT','PDF','-append')
+        end
+        if P.ssf==1
+            save([output_folder,'\',filename],'SSF','-append')
+        end
+        if P.cluster==1
+            save([output_folder,'\',filename],'CLUSTERS','DEGREES','-append')
+        end
+        if P.dens==1
+            save([output_folder,'\',filename],'DCOMP','-append')
+        end
+        if P.equipartition==1
+            save([output_folder,'\',filename],'EQUIP','-append')
+        end
+        if P.exvol==1
+            save([output_folder,'\',filename],'AV','-append')
+        end
+        if isfile([output_folder,'\',tempfilename])
+            delete([output_folder,'\',tempfilename]);
+        end
     end
     clear DATA DEGREES AV CLUSTERS PDF* SSF* DS
 end
