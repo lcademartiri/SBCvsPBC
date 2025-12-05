@@ -46,6 +46,7 @@ C.hydrationlayer=2.5e-10;
 P.pdf=1;
 P.ssf=1;
 P.dens=0;
+P.allpos=1;
 P.equipartition=0;
 P.cluster=0;
 P.exvol=0;
@@ -196,6 +197,12 @@ for ic=29:30
 
         % ---- CALCULATION OF DISPLACEMENT LIBRARIES ----
         DISP=build_noise_library(S.stdx,P.nodisp);
+        % ----
+
+        % ---- INITIALIZATION OF POSITION STORAGE ---- 
+        if P.allpos==1
+              POS=zeros(S.N,3,P.maxsteps/10);
+        end
         % ----
 
         % --- MONTECARLO CLAMP DETERMINATION ---
@@ -688,6 +695,12 @@ for ic=29:30
             end
             % ---
 
+            % --- POSITION DATA STORAGE ---
+            if P.allpos==1 && mod(qs,10)==0
+                POS(:,:,qs/10)=p(1:S.N,:);
+            end
+            % ---
+
             % --- COUNTERS ---            
             qs=qs+1;
             if counterflag==0 && mod(qs,1e2)==0
@@ -707,6 +720,9 @@ for ic=29:30
                 end
                 if P.pdf==1
                     save([output_folder,'\',tempfilename],'PDFT','PDF','-append')
+                end
+                if P.allpos==1
+                    save([output_folder,'\',tempfilename],'POS','-append')
                 end
                 if P.ssf==1
                     save([output_folder,'\',tempfilename],'SSF','-append')
