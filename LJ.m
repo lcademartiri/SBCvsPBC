@@ -99,7 +99,7 @@ CONDS=effective_diffusivity(data_folder,CONDS,P,C);
 
 %% SIMULATION EXECUTION
 
-for ic=27
+for ic=25
     
     if CONDS.alpha(ic,1)==0
         continue
@@ -287,7 +287,7 @@ for ic=27
             if S.potential~=0
                 if S.bc==1 % SBC
                     % calculate the displacement components due to potentials for all particles (reals and active ghosts)
-                    disppot=potential_displacements_v13(ptemp, S, H, H_interpolant, 0);
+                    disppot=potential_displacements_v13(ptemp, S, H, H_interpolant, 1);
                     % extract potential displacements for active ghosts
                     disppotgp=disppot(S.N+1:end,:);
                     % extract potential displacements for reals
