@@ -99,7 +99,7 @@ CONDS=effective_diffusivity(data_folder,CONDS,P,C);
 
 %% SIMULATION EXECUTION
 
-for ic=20
+for ic=27
     
     if CONDS.alpha(ic,1)==0
         continue
@@ -161,7 +161,7 @@ for ic=20
         S.fcc.a1 = 2*S.br.*S.fcc.unitvecs(1,:);
         S.fcc.a2 = 2*S.br.*S.fcc.unitvecs(2,:);
         S.fcc.a3 = 2*S.br.*S.fcc.unitvecs(3,:);
-        S.fcc.A=[S.fcc.a1; S.fcc.a2; S.fcc.a3]';
+        S.fcc.A=[S.fcc.a1(:), S.fcc.a2(:), S.fcc.a3(:)]';
         S.fcc.invA = inv(S.fcc.A);
         S.fcc.reciprocal_vectors = S.fcc.invA';
         S.fcc.normals = [cross(S.fcc.a2,S.fcc.a3);
@@ -174,11 +174,9 @@ for ic=20
         S.fcc.shift_coeffs(all(S.fcc.shift_coeffs==0,2),:) = []; % A robust way to remove [0,0,0]
         S.fcc.cart_shifts = S.fcc.shift_coeffs * S.fcc.A;
         clear n1 n2 n3
-    elseif S.bc==2
-        % for cubic PBC use diag(L,L,L) for MIC transforms
-        L = 2*S.br;
-        S.fcc.A = diag([L,L,L]);
-        S.fcc.invA = diag([1/L,1/L,1/L]); 
+    elseif S.bc==2 || S.bc==1
+        S.fcc.A = diag([2*S.br,2*S.br,2*S.br]);
+        S.fcc.invA = diag([1/(2*S.br),1/(2*S.br),1/(2*S.br)]); 
     end
     clear nx ny nz dx dy dz SX SY SZ neighbor_offsets neighbor_linear valid lin all_ids remainder cx cy cz
     
@@ -211,7 +209,9 @@ for ic=20
             PDF=pdf_initialization(S,P,data_folder);
         end
         if P.ssf==1
-            SSF=ssf_initialization(S);
+            % SSF=ssf_initialization(S);
+            SSF = ssf_engine_init_unified(S);
+            SSF = ssf_init_sbc_modes(SSF, S);
         end
         % calculation of bins for density diagnostics must depend on the
         % shape of the boundary. In the case of SBC we look at the density
@@ -628,7 +628,9 @@ for ic=20
                 if mod(qs,P.pdfthermints)==0 | qs==1
                     ssf_ind=floor(qs/P.pdfthermints)+1;
                     tempp=p(1:S.N,1:3);
-                    SSF=ssf_accumulation(tempp',SSF,ssf_ind,S.N);
+                    SSF = ssf_accumulation_unified(tempp, SSF);
+                    SSF = ssf_accumulation_sbc(tempp, SSF);
+                    % SSF=ssf_accumulation(tempp',SSF,ssf_ind,S.N);
                 end
             end
             % --------------------------
