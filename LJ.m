@@ -30,8 +30,8 @@ addpath(output_folder)
 
 %% SERIES NAME
 
-filenamecollisionseries='SBCvsPBC_v2_%d.mat';
-filenamecollisionseries_temp='SBCvsPBC_v2_temp_%d.mat';
+filenamecollisionseries='SBCvsPBC_%d.mat';
+filenamecollisionseries_temp='SBCvsPBC_temp_%d.mat';
 
 %% FIXED PHYSICAL PARAMETERS
 
@@ -99,7 +99,7 @@ CONDS=effective_diffusivity(data_folder,CONDS,P,C);
 
 %% SIMULATION EXECUTION
 
-for ic=25
+for ic=29:30
     
     if CONDS.alpha(ic,1)==0
         continue
