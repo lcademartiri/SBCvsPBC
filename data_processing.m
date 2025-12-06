@@ -1,24 +1,40 @@
 %% CLEANUP
 
-clear all
+clearvars -except ISO
 close all
 rng('shuffle')
 warning('off', 'all');
 
 %% SERIES NAME
 
-output_folder='D:\OneDrive - Università degli Studi di Parma\Manuel Dedola\outlines\spherical boundary conditions for brownian dynamics simulations\submissions\JChemPhys\revision\code\freeghost_nocorr';
-data_folder = 'D:\GoogleDrive\LCL\Ludovico Cademartiri\Work\projects\ARBD\database';
-addpath(output_folder)
+if exist('D:\GoogleDrive\LCL\Ludovico Cademartiri\Work\projects\ARBD\database','dir')
+    data_folder = 'D:\GoogleDrive\LCL\Ludovico Cademartiri\Work\projects\ARBD\database';
+elseif exist('G:\My Drive\LCL\Ludovico Cademartiri\Work\projects\ARBD\database','dir')
+    data_folder = 'G:\My Drive\LCL\Ludovico Cademartiri\Work\projects\ARBD\database';
+elseif exist('D:\GDrive\LCL\Ludovico Cademartiri\Work\projects\ARBD\database','dir')
+    data_folder = 'D:\GDrive\LCL\Ludovico Cademartiri\Work\projects\ARBD\database';
+end
+if exist('D:\OneDrive - Università degli Studi di Parma\Manuel Dedola\outlines\spherical boundary conditions for brownian dynamics simulations\submissions\JChemPhys\revision\code\freeghost_nocorr','dir')
+    output_folder='D:\OneDrive - Università degli Studi di Parma\Manuel Dedola\outlines\spherical boundary conditions for brownian dynamics simulations\submissions\JChemPhys\revision\code\freeghost_nocorr';
+elseif exist('C:\Users\lcade\OneDrive - Università degli Studi di Parma\Manuel Dedola\outlines\spherical boundary conditions for brownian dynamics simulations\submissions\JChemPhys\revision\code\freeghost_nocorr','dir')
+    output_folder='C:\Users\lcade\OneDrive - Università degli Studi di Parma\Manuel Dedola\outlines\spherical boundary conditions for brownian dynamics simulations\submissions\JChemPhys\revision\code\freeghost_nocorr';
+elseif exist('D:\OneDrive - Università degli Studi di Parma\Manuel Dedola\outlines\spherical boundary conditions for brownian dynamics simulations\submissions\JChemPhys\revision\code\freeghost_nocorr','dir')
+    output_folder='D:\OneDrive - Università degli Studi di Parma\Manuel Dedola\outlines\spherical boundary conditions for brownian dynamics simulations\submissions\JChemPhys\revision\code\freeghost_nocorr';
+end
+    
+toolbox_folder = '..\ARBD_toolbox';
 addpath(data_folder)
-filenamecollisionseries='SBCvsPBC_TEST_temp_%d.mat';
+addpath(toolbox_folder)
+addpath(output_folder)
+
+filenamecollisionseries='SBCvsPBC_%d.mat';
 plottingenabled=1;
 
 %% ANALYSIS
 
 conditionstoprocess=[];
 
-for ic=1:30
+for ic=27
     filename=sprintf(filenamecollisionseries,ic);
     if exist(filename,'file')>0
         conditionstoprocess=[conditionstoprocess,ic];
@@ -110,12 +126,33 @@ for ic=conditionstoprocess
     peakA=peakA(1);
     % ---
     % --- define gaussian fit options
-    ft = fittype('A*exp(-(x-mu)^2/(2*sigma^2))', ...
-        'independent','x','coefficients',{'A','mu','sigma'});
+    ft = fittype(...
+    'A * ( eta/(1+((x-mu)/gamma)^2) + (1-eta)*exp(-(x-mu)^2/(2*sigma^2)) )', ...
+    'independent','x', ...
+    'coefficients',{'A','mu','sigma','gamma','eta'});
+
     opts = fitoptions(ft);
-    opts.Lower      = [0.5*peakA, 1.5*peakvalue,    0.01*abs(peakvalue)       ];
-    opts.Upper      = [1.5*peakA, 0.8*peakvalue,    1*abs(peakvalue)     ];
-    opts.StartPoint = [peakA,      peakvalue, 0.2*abs(peakvalue)];
+    
+    opts.Lower = [ ...
+        0.5*peakA, ...                 % A
+        1.5*peakvalue, ...             % mu
+        0.001*abs(peakvalue), ...       % sigma
+        0.001*abs(peakvalue), ...       % gamma
+        0 ];                           % eta
+    
+    opts.Upper = [ ...
+        1.5*peakA, ...                 % A
+        0.8*peakvalue, ...             % mu
+        1*abs(peakvalue), ...          % sigma
+        1*abs(peakvalue), ...          % gamma
+        1 ];                           % eta
+    
+    opts.StartPoint = [ ...
+        peakA, ...                     % A
+        peakvalue, ...                 % mu
+        0.2*abs(peakvalue), ...        % sigma
+        0.2*abs(peakvalue), ...        % gamma
+        0.5 ];                         % eta  (equal L/G mix initially)
     % ---
     % --- windowed fit
     xwins=[10:10:1000]';
@@ -137,7 +174,8 @@ for ic=conditionstoprocess
         x=hist_azs(bottom:top,1);
         y=hist_azs(bottom:top,2);
         [cf, gof] = fit(x, y, ft, opts);
-        yfit_all  = cf.A * exp(-(xall - cf.mu).^2/(2*cf.sigma^2));
+        yfit_all = cf.A * ( cf.eta ./ (1 + ((xall - cf.mu)/cf.gamma).^2) + ...
+                        (1-cf.eta) .* exp(-(xall - cf.mu).^2/(2*cf.sigma^2)) );
         SSres = sum((yall - yfit_all).^2);        
         R2(iwin) = 1 - SSres/SStot;
         if R2(iwin)>R2best
@@ -150,7 +188,9 @@ for ic=conditionstoprocess
         figure
         plot(xall,yall)
         hold
-        plot(xall,bestfit.cf.A * exp(-(xall - bestfit.cf.mu).^2/(2*bestfit.cf.sigma^2)))
+        yfit_all = bestfit.cf.A * ( bestfit.cf.eta ./ (1 + ((xall - bestfit.cf.mu)/bestfit.cf.gamma).^2) + ...
+                                (1-bestfit.cf.eta) .* exp(-(xall - bestfit.cf.mu).^2/(2*bestfit.cf.sigma^2)) );
+        plot(xall,yfit_all)
         hold
     end
     confints=confint(bestfit.cf);
@@ -207,7 +247,13 @@ for ic=conditionstoprocess
        
     % --- determining the ideal gas distance distribution by Montecarlo ---
     fprintf('condition: %d - boundary condition: %d -  phi: %.3f - calculating pair distribution function\n', ic, S.bc, S.phi);
-    filepdfdenom = sprintf('PDFdenom_%.0e_%.0e_%.0f.mat',S.rp,S.phi,S.N);
+    if S.bc==1
+        filepdfdenom = sprintf('PDFdenom_SBC_%.0e_%.0e_%.0f.mat',S.rp,S.phi,S.N);
+    elseif S.bc==2
+        filepdfdenom = sprintf('PDFdenom_PBCc_%.0e_%.0e_%.0f.mat',S.rp,S.phi,S.N);
+    elseif S.bc==3
+        filepdfdenom = sprintf('PDFdenom_PBCFCC_%.0e_%.0e_%.0f.mat',S.rp,S.phi,S.N);
+    end
     load(filepdfdenom,'gdenominator');
     % ---
     % --- determine the g
@@ -221,12 +267,116 @@ for ic=conditionstoprocess
         figure
         plot(g(:,1),g(:,2))
         xlim([2*S.rp 2*S.br+2*S.rc]);
+        ylim([0.5 max(g(:,2))*1.2]);
         yline(1)
         xline(2*S.br)
         xline(2*(S.br-S.rp))
     end
     % ---
     % -------------------------------------------------------------------
+
+    % --- WAITING TIME ANALYSIS --------------------------------------------------
+       
+    % --- per particle ---
+    colls=EDGES{ic,1};
+    clear EDGES
+    idxswap=colls(:,3)<colls(:,2);
+    colls(idxswap,[2 3])=colls(idxswap,[3 2]);
+    colls=sortrows(colls,[2 1],"ascend");
+    ds=zeros(size(colls,1)-1,1);
+    q=1;
+    [~,b]=ismember((1:S.N)',colls(:,2));
+    for ib=1:size(b,1)-1
+        xmin=b(ib);
+        xmax=b(ib+1)-1;
+        s=colls(xmin:xmax,1);
+        ds(q:q+xmax-xmin-1,1)=diff(s);
+        q=xmax+1;
+        disp(ib)
+    end
+    ds(ds==0,:)=[];
+    wtppart.edges=(1:max(ds))';
+    [wtppart.counts,wtppart.edges]=histcounts(ds,wtppart.edges);
+    wtppart.dist=[wtppart.edges(1:end-1,1),wtppart.counts',wtppart.counts'./sum(wtppart.counts)];
+    wtppart.dist(wtppart.dist(:,2)==0,:)=[];
+    if plottingenabled==1
+        figure
+        plot(wtppart.dist(:,1),wtppart.dist(:,3))
+        xscale log
+        yscale log
+    end
+    % ----------------------
+    % --- per pair ---
+    ds=zeros(size(colls,1)-1,1);
+    q=1;
+    ncolls=size(colls,1);
+    colls=sortrows(colls,[2,3,1]);
+    qds=1;
+    while true
+        coll1=colls(q,2);
+        coll2=colls(q,3);
+        qs=q+1;
+        while qs>0
+            if qs>ncolls
+                qs=qs-1;
+                s=colls(q:qs,1);
+                ds(qds:qds+numel(s)-2,1)=diff(s);
+                break
+            end
+            if colls(qs,3)==coll2
+                if colls(qs,2)==coll1
+                    qs=qs+1;                   
+                else
+                    qs=-qs;
+                end
+            else
+                qs=-qs;
+            end
+        end
+        if qs~=ncolls
+            qs=-qs-1;
+            s=colls(q:qs,1);
+            ds(qds:qds+numel(s)-2,1)=diff(s);
+            qds=qds+numel(s)-1;
+        end
+        q=qs+1;
+        if q>ncolls
+            break
+        end
+
+    end
+    ds(ds==0,:)=[];
+    wtppair.edges=(1:max(ds))';
+    [wtppair.counts,wtppair.edges]=histcounts(ds,wtppair.edges);
+    wtppair.dist=[wtppair.edges(1:end-1,1),wtppair.counts',wtppair.counts'./sum(wtppair.counts)];
+    wtppair.dist(wtppair.dist(:,2)==0,:)=[];
+    if plottingenabled==1
+        figure
+        plot(wtppair.dist(:,1),wtppair.dist(:,3))
+        xscale log
+        yscale log
+    end
+    % ----------------------
+    % --- consecutive ----
+    ds(ds~=1,:)=0;
+    ds=logical(ds);
+    d = diff([0, ds(:)', 0]);
+    startIndex = find(d == 1);
+    endIndex   = find(d == -1);
+    runLengths = endIndex - startIndex;
+    cc.edges=(1:max(runLengths))';
+    [cc.counts,cc.edges]=histcounts(runLengths,cc.edges);
+    cc.dist=[cc.edges(1:end-1,1),cc.counts',cc.counts'./sum(cc.counts)];
+    cc.dist(cc.dist(:,2)==0,:)=[];
+    if plottingenabled==1
+        figure
+        plot(cc.dist(:,1),cc.dist(:,3))
+        xscale log
+        yscale log
+    end
+    % --------------------------------------------------------------
+
+    % ---------------------------------------------------------------------
 
     % --- COLLATING DATA ------------------------------------------------
     fprintf('condition: %d - boundary condition: %d -  phi: %.3f - collating data\n', ic, S.bc, S.phi);
@@ -248,6 +398,9 @@ for ic=conditionstoprocess
     ISO(ic).P=P;
     ISO(ic).V=V;
     ISO(ic).C=C;
+    ISO(ic).WT.ppart=wtppart;
+    ISO(ic).WT.ppair=wtppair;
+    ISO(ic).CC=cc;
     % -------------------------------------------------------------------
     
 end
