@@ -8,7 +8,7 @@ clear; close all; clc;
 % =========================================================================
 
 make_movie   = false;
-vis_interval = 1000;   % Update less often because N is large
+vis_interval = 10;   % Update less often because N is large
 
 % --- System State ---
 rho    = 0.30;       
@@ -22,7 +22,7 @@ t_max  = 50.0;       % Shorter time (sim is heavier)
 
 % --- Potential ---
 sigma   = 1.0;       
-epsilon = 0.5;
+epsilon = 5;
 r_cut   = 3 * sigma; 
 
 % --- Analysis ---

@@ -5,7 +5,7 @@ clear; close all; clc;
 
 % --- 1. SETUP (Longer Run for Better Low-Q Stats) ---
 N_side = 40;            
-rho    = 0.4;           
+rho    = 0.7;           
 T      = 1.0;           
 D0     = 0.05;       
 dt     = 0.002;      
@@ -109,7 +109,7 @@ for i = 1:n_grid+1 % Loop over positive quadrant
 end
 
 % --- 5. VISUALIZATION ---
-figure('Color','w', 'Position', [100 100 1000 500]);
+figure('Color','k', 'Position', [100 100 1000 500]);
 
 % Plot Raw (Noisy)
 subplot(1,2,1);
@@ -130,3 +130,19 @@ subtitle('Averaged over 8 symmetries');
 % Force the color scale to highlight the center structure
 caxis([0 prctile(clean_Deff(:), 95)]); 
 colormap(gca, 'jet');
+
+% Extract line profiles
+D10 = clean_Deff(center+1:center+n_grid-2, center);      % nx = 1:n_grid, ny=0
+D11 = diag(clean_Deff(center+1:center+n_grid-2, center+1:center+n_grid-2));
+
+q10 = (1:n_grid-2) * dq;
+q11 = (1:n_grid-2) * dq * sqrt(2);
+figure
+scatter(q10, D10, 30,'filled');
+hold
+scatter(q11, D11, 30,'filled');
+legend('[10]','[11]');
+xlabel('|q|'); ylabel('D_{eff}(q)');
+xscale log
+yscale log
+

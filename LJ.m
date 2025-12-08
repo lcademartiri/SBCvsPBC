@@ -100,12 +100,8 @@ CONDS=effective_diffusivity(data_folder,CONDS,P,C);
 
 %% SIMULATION EXECUTION
 
-<<<<<<< HEAD
-for ic=27 % loop over conditions
-=======
 for ic=29:30
->>>>>>> 3d48044e109b3e48439680ba3ecf4e37d52f0ab5
-    
+
     if CONDS.alpha(ic,1)==0
         continue
     end
@@ -759,6 +755,9 @@ for ic=29:30
         end
         if P.cluster==1
             save([output_folder,'\',filename],'CLUSTERS','DEGREES','-append')
+        end
+        if P.allpos==1
+            save([output_folder,'\',filename],'POS','-append')
         end
         if P.dens==1
             save([output_folder,'\',filename],'DCOMP','-append')
