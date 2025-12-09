@@ -30,8 +30,8 @@ addpath(output_folder)
 
 %% SERIES NAME
 
-filenamecollisionseries='SBCvsPBC_%d.mat';
-filenamecollisionseries_temp='SBCvsPBC_temp_%d.mat';
+filenamecollisionseries='SBCvsPBC_nogg_%d.mat';
+filenamecollisionseries_temp='SBCvsPBC_nogg_temp_%d.mat';
 
 %% FIXED PHYSICAL PARAMETERS
 
@@ -51,6 +51,7 @@ P.equipartition=0;
 P.cluster=0;
 P.exvol=0;
 P.collkin=1;
+P.ghostghost=0;
 P.io_enabled=true;
 P.correctionwindow=0; % window of the correction; 0 = no correction, 1e6 = S.rc, any other value X=X*S.rp;
 P.convergencemode=1; % 1  by step numbers, 2 by coll numbers, 3 by coll rates convergence
@@ -100,7 +101,7 @@ CONDS=effective_diffusivity(data_folder,CONDS,P,C);
 
 %% SIMULATION EXECUTION
 
-for ic=29:30
+for ic=26
 
     if CONDS.alpha(ic,1)==0
         continue
@@ -294,7 +295,7 @@ for ic=29:30
             if S.potential~=0
                 if S.bc==1 % SBC
                     % calculate the displacement components due to potentials for all particles (reals and active ghosts)
-                    disppot=potential_displacements_v13(ptemp, S, H, H_interpolant, 1);
+                    disppot=potential_displacements_v13(ptemp, S, H, H_interpolant, P.ghostghost);
                     % extract potential displacements for active ghosts
                     disppotgp=disppot(S.N+1:end,:);
                     % extract potential displacements for reals
