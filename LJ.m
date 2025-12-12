@@ -100,7 +100,7 @@ CONDS=effective_diffusivity(data_folder,CONDS,P,C);
 
 %% SIMULATION EXECUTION
 
-for ic=29:30
+for ic=30
 
     if CONDS.alpha(ic,1)==0
         continue
@@ -635,9 +635,8 @@ for ic=29:30
                 if mod(qs,P.pdfthermints)==0 | qs==1
                     ssf_ind=floor(qs/P.pdfthermints)+1;
                     tempp=p(1:S.N,1:3);
-                    SSF = ssf_accumulation_unified(tempp, SSF);
+                    SSF = ssf_accumulation_unified(tempp, SSF, S.cacheSizeMB);
                     SSF = ssf_accumulation_sbc(tempp, SSF);
-                    % SSF=ssf_accumulation(tempp',SSF,ssf_ind,S.N);
                 end
             end
             % --------------------------
