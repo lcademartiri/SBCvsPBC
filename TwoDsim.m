@@ -3,7 +3,7 @@
 clear all
 close all
 clc
-addpath('C:\Codebase\ARBD\ARBD_toolbox');
+addpath('..\ARBD_toolbox');
 
 %% FLAGS
 
@@ -16,7 +16,7 @@ dp=2*S.rp;
 epsilon=1;
 sigma=2*S.rp;
 S.rc=3*sigma;
-maxsteps=1e5;
+maxsteps=1e6;
 reps=1;
 S.stdx=S.rp/50;
 nodisps=1e6;
@@ -170,12 +170,6 @@ for ic=18
         end
 	end
 	
-	%function [S_map, F_map, Deff_map, time_lags] = structure_and_dynamics_2D(p, k_mags, thetas, dt)
-	% STRUCTURE_AND_DYNAMICS_2D Calculates Static and Dynamic Structure Factors
-	%
-	% Usage:
-	%   [S, F, Deff, taus] = structure_and_dynamics_2D(p, k_mags, thetas, dt)
-	%
 	% Inputs:
 	%   p        : (N x 2 x T) matrix. 
 	%              N = particles, 2 = (x,y), T = time steps.
@@ -202,7 +196,7 @@ for ic=18
 	kmax=2*pi/S.rp;
 	k_mags=kmin;
 	thetas=(0:5:360)';
-	thetas=thetas/(2*pi);
+	thetas=(2*pi).*(thetas/360);
 	thetas(end,:)=[];
 	[N, dim, T_steps] = size(p);
 	
@@ -246,17 +240,75 @@ for ic=18
 			% --- 1. Calculate Density Mode rho(k, t) for all t ---
 			% rho_t will be 1 x T_steps complex vector
 			rho_t = zeros(1, T_steps);
+            rhou_t = zeros(1, T_steps);
+            rhoc_t = zeros(1, T_steps);
+            rhocu_t = zeros(1, T_steps);
+            % unwrapped coordinates
+            % unwrap along each coordinate
+            pu = zeros(size(p));
+            pc = cell(size(p),1);
 			
 			% Vectorized over particles for each frame
 			% Note: If T is huge, might be better to loop frames.
 			% Here assuming T fits in memory.
-            COM = squeeze(mean(p,1)); % 2 x T
-			for t = 1:T_steps
-				% p(:, 1, t) is Nx1 X-coords
-                p(:,:,t) = p(:,:,t) - COM(:,t)';
-				phase = -(qx * p(:,1,t) + qy * p(:,2,t));
-				rho_t(t) = sum(exp(1i * phase));
+            COM = squeeze(mean(p,1)); % 2 x T			
+			
+			% 1. VECTORIZED UNWRAPPING
+			% Calculate differences between all consecutive frames at once
+			% dp is (N x 2 x T-1)
+			dp = diff(p, 1, 3); 
+
+			% Apply Minimum Image Convention to all dp at once
+			dp(dp > S.L/2)  = dp(dp > S.L/2) - S.L;
+			dp(dp < -S.L/2) = dp(dp < -S.L/2) + S.L;
+
+			% Reconstruct unwrapped paths using cumulative sum
+			% We prepend the first frame so dimensions match
+			pu = cat(3, p(:,:,1), zeros(size(dp))); % Initialize
+			pu(:,:,2:end) = dp;                     % Fill deltas
+			pu = cumsum(pu, 3);                     % Integrate: [p1, p1+dp1, p1+dp1+dp2...]
+
+			% 2. CENTER OF MASS (Vectorized)
+			% Calculate COM for Unwrapped (2 x T)
+			% mean(pu, 1) gives 1 x 2 x T -> squeeze -> 2 x T
+			COMu = squeeze(mean(pu, 1))'; 
+
+			% Prepare COM arrays for broadcasting subtraction (1 x 2 x T)
+			COM_wrapped_reshaped = reshape(COM, [1, 2, T_steps]);
+			COM_unwrapped_reshaped = reshape(COMu, [1, 2, T_steps]);
+
+			% Subtract COMs from all particles at all times simultaneously
+			% MATLAB R2016b+ supports implicit expansion (p is Nx2xT, COM is 1x2xT)
+			p_centered = p - COM_wrapped_reshaped;
+			pu_centered = pu - COM_unwrapped_reshaped;
+
+			% 3. FOURIER COEFFICIENTS (Vectorized)
+			% A. Wrapped
+			% Calculate phase for all N particles and T steps: (N x T) matrix
+			% We squeeze p(:,1,:) to get N x T matrices
+			phase_wrapped = -(qx * squeeze(p_centered(:,1,:)) + qy * squeeze(p_centered(:,2,:)));
+			rho_t = sum(exp(1i * phase_wrapped), 1); % Sum down columns (particles)
+
+			% B. Unwrapped
+			phase_unwrapped = -(qx * squeeze(pu_centered(:,1,:)) + qy * squeeze(pu_centered(:,2,:)));
+			rhou_t = sum(exp(1i * phase_unwrapped), 1);
+
+			% C. Spherical (Masking approach)
+			if S.bc == 2
+				% Calculate distance squared for all particles/times
+				% p_centered is N x 2 x T
+				dist_sq = sum(p_centered.^2, 2); % Result is N x 1 x T
+				
+				% Create a logical mask (N x T)
+				% 1 if inside sphere, 0 if outside
+				mask = squeeze(dist_sq) < S.br^2; 
+				
+				% Multiply the complex exponential by the mask (zeros out external particles)
+				% Then sum.
+				rhoc_t = sum(exp(1i * phase_wrapped) .* mask, 1);
 			end
+
+
 			
 			% --- 2. Static Structure Factor S(theta, |k|) ---
 			% S(k) = <|rho(k)|^2> / N
@@ -277,7 +329,7 @@ for ic=18
 				% F(tau) = < rho(t+tau) * conj(rho(t)) >
 				for tau = 0:max_lag
 					% Elements we can multiply (t and t+tau)
-					val = rho_t(1+tau : end) .* conj(rho_t(1 : end-tau));
+					val = rhou_t(1+tau : end) .* conj(rhou_t(1 : end-tau));
 					acf(tau+1) = mean(val);
 				end
 				
