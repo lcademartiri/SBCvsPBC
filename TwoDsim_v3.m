@@ -230,26 +230,25 @@ for ic=9:size(c,1)
             p(:,:,1:maxsteps/2)=[];
             [N, dim, T_steps] = size(p);
             
-            % Box parameters
-            L_box = 2*S.br;
-            
-            % --- ADVICE: Probe higher k to see isotropy ---
-            % At k_fundamental, the box shape dominates. 
-            % Try 3*k_fundamental to see the liquid structure instead of the box.
-            k_fundamental = 2*pi/L_box;
-            k_mags = k_fundamental * [1]; 
-            
-            thetas = (0:10:360)';
-            thetas_rad = deg2rad(thetas(1:end-1)); 
+			% K-WINDOW
+			k_fundamental = 2*pi/L_box;
+			k_max=pi/S.rp;
+            k_mags = (k_fundamental:k_fundamental:k_max)'; 
             nK = length(k_mags);
+			
+			% THETA-WINDOW
+            thetas = (0:10:350)';
+            thetas_rad = deg2rad(thetas); 
             nTheta = length(thetas_rad);
             
+			% OUTPUT ARRAY INITIALIZATION
             S_std = zeros(nTheta, nK);  
             S_mask = zeros(nTheta, nK); 
             Deff_std = zeros(nTheta, nK);
             Deff_mask = zeros(nTheta, nK);
             
-            max_lag = min(floor(T_steps/3), maxsteps/10); 
+			% DYNAMICS
+			max_lag = min(floor(T_steps/3), maxsteps/10); 
             
             fprintf('Calculating Structure and Dynamics...\n');
     
@@ -265,64 +264,43 @@ for ic=9:size(c,1)
             pu = cat(3, p(:,:,1), zeros(size(dp)));
             pu(:,:,2:end) = dp;
             pu = cumsum(pu, 3);
-            
-            % B. Wrapped & Centered (Strictly [-br, br])
-            if S.bc == 2
-                % Wrap strictly to [-br, br]
-                p_wrapped = mod(p + S.br, 2*S.br) - S.br;
-                
-                % FOR PBC: DO NOT SUBTRACT COM. 
-                % Use the fixed geometric center (0,0) of the box.
-                p_cent = p_wrapped; 
-            else
-                % FOR SBC: Subtract COM (Cluster can float)
-                COM = mean(p, 1);
-                p_cent = p - COM; 
-            end
     
             % --- 2. DEFINE MASK ---
             % Fixed Mask at (0,0)
-            if S.bc == 1, R_mask = S.br; else, R_mask = S.br; end
-            
-            dist_sq = sum(p_cent.^2, 2); 
-            mask = dist_sq < R_mask^2; 
-            N_eff = mean(sum(mask, 1));
+            if S.bc == 2, 
+				R_mask = S.br;
+				dist_sq = sum(p_cent.^2, 2); 
+				mask = squeeze(dist_sq < R_mask^2); 
+				N_eff = mean(sum(mask, 1));				
+			end
     
             % --- 3. LOOP K-VECTORS ---
             for th_i = 1:nTheta
+				
+				% initialize angles and utilities
                 theta = thetas_rad(th_i);
                 cos_th = cos(theta); sin_th = sin(theta);
                 
                 for k_i = 1:nK
+				
+					% initialize k-vectors and utilities
                     k_val = k_mags(k_i);
                     qx = k_val * cos_th; qy = k_val * sin_th;
                     
-                    % A. STANDARD (Use Wrapped, Full Box)
-                    % This will ALWAYS look "Square" at k = 2pi/L. 
-                    % This is the Fourier Transform of the Box itself.
-                    if S.bc == 2
-                        px = squeeze(p_wrapped(:,1,:));
-                        py = squeeze(p_wrapped(:,2,:));
-                    else
-                        px = squeeze(p_cent(:,1,:));
-                        py = squeeze(p_cent(:,2,:));
-                    end
+                    % A. S(k)
+					px = squeeze(p(:,1,:));
+                    py = squeeze(p(:,2,:));
                     rho_static = sum(exp(1i * -(qx * px + qy * py)), 1);
                     S_std(th_i, k_i) = mean(abs(rho_static).^2) / S.N;
+					% MASKED S(k)
+                    rho_mask = sum(exp(1i * -(qx * px(mask( + qy * py(mask))) .* mask, 1);
+					S_mask(th_i, k_i) = mean(abs(rho_mask).^2) / N_eff;
                     
                     % B. DYNAMICS (Use Unwrapped)
                     pux = squeeze(pu(:,1,:)); puy = squeeze(pu(:,2,:));
                     rho_dyn = sum(exp(1i * -(qx * pux + qy * puy)), 1);
                     Deff_std(th_i, k_i) = get_deff(rho_dyn, max_lag, dt, k_val);
-
-                    % C. MASKED (Use Fixed Centered + Mask)
-                    % This removes the "Dipole" artifact from COM subtraction.
-                    px_m = squeeze(p_cent(:,1,:));
-                    py_m = squeeze(p_cent(:,2,:));
-                    rho_mask = sum(exp(1i * -(qx * px_m + qy * py_m)) .* squeeze(mask), 1);
-        
-                    S_mask(th_i, k_i) = mean(abs(rho_mask).^2) / N_eff;
-                    Deff_mask(th_i, k_i) = get_deff(rho_mask, max_lag, dt, k_val);
+					Deff_mask(th_i, k_i) = get_deff(rho_mask, max_lag, dt, k_val);
                 end
             end
         end
