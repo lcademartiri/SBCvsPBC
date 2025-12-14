@@ -22,6 +22,9 @@ elseif exist('D:\OneDrive - Università degli Studi di Parma\Manuel Dedola\outli
 end
     
 toolbox_folder = '..\ARBD_toolbox';
+utilities_folder =  fullfile('..', '..', 'Utilities');
+utilities_folder = genpath(utilities_folder);
+addpath(utilities_folder)
 addpath(data_folder)
 addpath(toolbox_folder)
 addpath(output_folder)
@@ -62,6 +65,7 @@ uhex=[1,0;0.5,sqrt(3)/2];
 tokens = regexp(cmdout, '\d+', 'match');
 S.cacheSizeMB = (max(str2double(tokens))/1024)/feature('numCores');
 eps=1e-6;
+COLORMAPS=loadColormaps();
 
 %% CONDITIONS
 q=1;
@@ -260,11 +264,13 @@ for ic=12:size(c,1)
 			% K-WINDOW
 			k_fundamental = 2*pi/(2*S.br);
 			k_max=pi/S.rp;
-            k_mags = k_fundamental.*[1/2,1,sqrt(2),sqrt(3),2,3,pi,4,5]'; 
+            k_mags=(k_fundamental:k_fundamental:k_max)';
+            k_mags=sort([k_mags;k_fundamental.*[0.5;sqrt(2);sqrt(3);pi]]);
+            % k_mags = k_fundamental.*[1/2,1,sqrt(2),sqrt(3),2,3,pi,4,5,6]'; 
             nK = length(k_mags);
 			
 			% THETA-WINDOW
-            thetas = (0:10:180)';
+            thetas = (0:10:170)';
             thetas_rad = deg2rad(thetas); 
             nTheta = length(thetas_rad);
             
