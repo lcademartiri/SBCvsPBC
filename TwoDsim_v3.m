@@ -28,6 +28,7 @@ addpath(utilities_folder)
 addpath(data_folder)
 addpath(toolbox_folder)
 addpath(output_folder)
+cmaplibrary=loadColormaps();
 filenameseries='2D_%d_%d.mat';
 
 %% FLAGS
