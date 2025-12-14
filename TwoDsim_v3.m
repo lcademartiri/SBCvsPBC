@@ -91,7 +91,7 @@ c(c(:,6)~=1 & c(:,4)~=1,:)=[];
 c(:,1)=(1:size(c,1))';
 %% LOOP
 
-for ic=12:size(c,1)
+for ic=9:size(c,1)
     for irep=1:reps
 
         posfilename=sprintf(filenameseries,ic,irep);
@@ -327,9 +327,13 @@ for ic=12:size(c,1)
                     
                     % B. DYNAMICS (Use Unwrapped)
 
-                    pux = squeeze(put(:,1,:)); puy = squeeze(put(:,2,:));
-                    rho_dyn = sum(exp(1i * -(qx * pux + qy * puy)), 1);
-                    if S.bc==2
+                    
+                    if S.bc==1
+                        px = squeeze(pt(:,1,:)); py = squeeze(pt(:,2,:));
+                        rho_dyn = sum(exp(1i * -(qx * px + qy * py)), 1);
+                    elseif S.bc==2
+                        pux = squeeze(put(:,1,:)); puy = squeeze(put(:,2,:));
+                        rho_dyn = sum(exp(1i * -(qx * pux + qy * puy)), 1);
                         rho_dyn_mask = sum(mask .* exp(1i * (qx*pux + qy*puy)), 1);
                     end
 
@@ -473,10 +477,10 @@ function D = get_deff(rho_t, max_lag, dt, k_val)
 end
 
 %%
-plot_polar_surface(thetas_rad, k_mags, Deff_mask)
+plot_polar_surface(thetas_rad, k_mags, S_std,COLORMAPS)
 %%
 
-function plot_polar_surface(thetas, ks, Deff)
+function plot_polar_surface(thetas, ks, Deff,COLORMAPS)
     % PLOT_POLAR_SURFACE
     % Inputs:
     %   thetas: 1D array of angles in radians
@@ -487,13 +491,30 @@ function plot_polar_surface(thetas, ks, Deff)
     % If your data is 0-180, we mirror it to 0-360 to show the full "Flower"
     if max(thetas) <= pi + 0.1
         fprintf('Mirroring data from 180 to 360 for visualization...\n');
-        thetas_full = [thetas; thetas + pi];
-        Deff_full = [Deff; Deff]; % Duplicate data for the second half
+        thetas_full = [thetas; thetas + pi;2*pi];
+        Deff_full = [Deff; Deff;Deff(1,:)]; % Duplicate data for the second half
     else
         thetas_full = thetas;
         Deff_full = Deff;
     end
+    % 2. Create the Grid (Theta on Rows, K on Cols)
+    % Note: Check dimensions. 
+    % If z_export is (nTheta x nK), we need grids to match.
+    [K_GRID, TH_GRID] = meshgrid(ks, thetas_full);
     
+    % 3. Flatten to Columns
+    % Column 1: Angle in Degrees
+    Col_Theta = rad2deg(TH_GRID(:));
+    
+    % Column 2: Radius (k)
+    Col_Radius = K_GRID(:);
+    
+    % Column 3: Intensity (Deff)
+    Col_Z = Deff_full(:);
+
+    OriginData=[Col_Theta,Col_Radius,Col_Z];
+
+
     % 2. CREATE POLAR GRID
     % Create 2D grids. 
     % Note: meshgrid(x,y) puts x on columns and y on rows.
@@ -517,7 +538,7 @@ function plot_polar_surface(thetas, ks, Deff)
     
     % 6. STYLING (The "Publication" Look)
     shading interp;          % Smooth out the grid lines
-    colormap(copper);         % High contrast colormap
+    colormap(flipud(COLORMAPS.magma));         % High contrast colormap
     colorbar;
     
     % Lighting to show 3D texture
