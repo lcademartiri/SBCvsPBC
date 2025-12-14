@@ -41,7 +41,7 @@ S.dp=2*S.rp;
 sigma=2*S.rp;
 S.rc=3*sigma;
 maxsteps=1e5;
-reps=1;
+reps=10;
 S.stdx=S.rp/10;
 nodisps=1e6;
 S.timestep=1;
@@ -50,8 +50,8 @@ S.kbT=1;
 
 %% VARIABLES
 
-Ns=round(logspace(log10(1e2),log10(1e4),3)',0);
-phis=logspace(log10(0.1),log10(0.5),5)';
+Ns=round(logspace(log10(1e2),log10(1e3),2)',0);
+phis=logspace(log10(0.5),log10(0.5),1)';
 epsilons=logspace(log10(0.1),log10(1),3)';
 pots=(1:2)';
 bcs=(1:2)';
@@ -86,7 +86,7 @@ c(c(:,6)~=1 & c(:,4)~=1,:)=[];
 c(:,1)=(1:size(c,1))';
 %% LOOP
 
-for ic=9:size(c,1)
+for ic=12:size(c,1)
     for irep=1:reps
 
         posfilename=sprintf(filenameseries,ic,irep);
@@ -181,14 +181,24 @@ for ic=9:size(c,1)
                 
                 % oob
                 if S.bc==1
-			        ptemp=[p;pg];
-                    pnorms=vecnorm(ptemp,2,2);
-                    [~,idxs]=sort(pnorms);
-                    ptemp=ptemp(idxs,:);
-                    p=ptemp(1:S.N,:);
-			        pnorms=vecnorm(p,2,2);
-			        idxgp=pnorms>(S.br-S.rc);
-			        pg=p(idxgp,:)-(2*S.br).*(p(idxgp,:)./pnorms(idxgp,:));
+			        % 1. Check for particles that left the sphere
+                    d = vecnorm(p, 2, 2);
+                    idx_out = d > S.br;
+                    
+                    % 2. "Wrap" them to the antipodal point
+                    % Instead of sorting, we simply teleport particle 'i' 
+                    % from R+eps to -R+eps (reflection through origin).
+                    % This preserves the index 'i' in the array.
+                    if any(idx_out)
+                         p(idx_out,:) = p(idx_out,:) - (2*S.br) .* (p(idx_out,:) ./ d(idx_out));
+                    end
+                    
+                    % 3. Regenerate Ghosts (for forces in next step)
+                    % Recalculate norms after the wrap
+                    d = vecnorm(p, 2, 2);
+                    idx_near = d > (S.br - S.rc);
+                    % Generate ghosts at antipodal points
+                    pg = p(idx_near,:) - (2*S.br) .* (p(idx_near,:) ./ d(idx_near));
                 elseif S.bc==2
                     p=mic_wrap_positions(p, S);
                 end
@@ -220,6 +230,7 @@ for ic=9:size(c,1)
             save([output_folder,'\',posfilename], 'POS', 'S', 'c', '-v7.3');
         else
             load(posfilename)
+            c(:,1)=(1:size(c,1))';
         end
     
         %% ANALYSIS
@@ -227,17 +238,33 @@ for ic=9:size(c,1)
             p=POS;    
             clear POS
             dt = 1;
-            p(:,:,1:maxsteps/2)=[];
+            p(:,:,1:floor(maxsteps/4))=[];
             [N, dim, T_steps] = size(p);
-            
+
+            % --- 1. COM CORRECTION & UNWRAPPING ---
+            COMw = mean(p,1);   % wrapped COM
+            pt=p-COMw;
+            if S.bc==2
+                pu = zeros(size(p));
+                pu(:,:,1) = p(:,:,1);
+                for t = 2:T_steps
+                    dp = p(:,:,t) - p(:,:,t-1);
+                    dp(dp >  S.br) = dp(dp >  S.br) - 2*S.br;
+                    dp(dp < -S.br) = dp(dp < -S.br) + 2*S.br;
+                    pu(:,:,t) = pu(:,:,t-1) + dp;
+                end
+                COMu = (mean(pu,1));
+                put=pu-COMu;
+            end
+
 			% K-WINDOW
-			k_fundamental = 2*pi/L_box;
+			k_fundamental = 2*pi/(2*S.br);
 			k_max=pi/S.rp;
-            k_mags = (k_fundamental:k_fundamental:k_max)'; 
+            k_mags = k_fundamental.*[1/2,1,sqrt(2),sqrt(3),2,3,pi,4,5]'; 
             nK = length(k_mags);
 			
 			% THETA-WINDOW
-            thetas = (0:10:350)';
+            thetas = (0:10:180)';
             thetas_rad = deg2rad(thetas); 
             nTheta = length(thetas_rad);
             
@@ -252,27 +279,17 @@ for ic=9:size(c,1)
             
             fprintf('Calculating Structure and Dynamics...\n');
     
-            % --- 1. PREPARE COORDINATES ---
-            
-            % A. Unwrapped (For Dynamics)
-            dp = diff(p, 1, 3);
-            if S.bc == 2 
-                % Enforce Minimum Image Convention on diffs
-                dp(dp > S.br) = dp(dp > S.br) - 2*S.br;
-                dp(dp < -S.br) = dp(dp < -S.br) + 2*S.br;
-            end
-            pu = cat(3, p(:,:,1), zeros(size(dp)));
-            pu(:,:,2:end) = dp;
-            pu = cumsum(pu, 3);
-    
             % --- 2. DEFINE MASK ---
-            % Fixed Mask at (0,0)
-            if S.bc == 2, 
-				R_mask = S.br;
-				dist_sq = sum(p_cent.^2, 2); 
+            % Mask is defined on the COM-corrected 'p'
+            if S.bc == 2 % PBC
+				R_mask = S.L/2;
+				dist_sq = sum(p.^2, 2); 
 				mask = squeeze(dist_sq < R_mask^2); 
 				N_eff = mean(sum(mask, 1));				
-			end
+            else % SBC
+                mask = true(N, 1, T_steps);
+                N_eff = N;
+            end
     
             % --- 3. LOOP K-VECTORS ---
             for th_i = 1:nTheta
@@ -288,42 +305,129 @@ for ic=9:size(c,1)
                     qx = k_val * cos_th; qy = k_val * sin_th;
                     
                     % A. S(k)
-					px = squeeze(p(:,1,:));
-                    py = squeeze(p(:,2,:));
+					px = squeeze(pt(:,1,:));
+                    py = squeeze(pt(:,2,:));
+
+                    % Standard
                     rho_static = sum(exp(1i * -(qx * px + qy * py)), 1);
                     S_std(th_i, k_i) = mean(abs(rho_static).^2) / S.N;
-					% MASKED S(k)
-                    rho_mask = sum(exp(1i * -(qx * px(mask( + qy * py(mask))) .* mask, 1);
-					S_mask(th_i, k_i) = mean(abs(rho_mask).^2) / N_eff;
+    
+                    % Masked
+                    if S.bc==2
+                        rho_mask = sum(mask .* exp(1i * (qx*px + qy*py)), 1);
+                        S_mask(th_i, k_i) = mean(abs(rho_mask).^2) / N_eff;
+                    end
                     
                     % B. DYNAMICS (Use Unwrapped)
-                    pux = squeeze(pu(:,1,:)); puy = squeeze(pu(:,2,:));
+
+                    pux = squeeze(put(:,1,:)); puy = squeeze(put(:,2,:));
                     rho_dyn = sum(exp(1i * -(qx * pux + qy * puy)), 1);
+                    if S.bc==2
+                        rho_dyn_mask = sum(mask .* exp(1i * (qx*pux + qy*puy)), 1);
+                    end
+
                     Deff_std(th_i, k_i) = get_deff(rho_dyn, max_lag, dt, k_val);
-					Deff_mask(th_i, k_i) = get_deff(rho_mask, max_lag, dt, k_val);
+                    if S.bc==2
+					    Deff_mask(th_i, k_i) = get_deff(rho_dyn_mask, max_lag, dt, k_val);
+                    end
+                    disp([ic,irep,th_i/nTheta,k_i/nK])
                 end
             end
         end
-    
-        %% PLOTTING
-        if plotting
-            figure('Color','k'); tiledlayout(2,2);
-            
-            if S.bc == 2, tit='PBC'; else, tit='SBC'; end
-            X = rad2deg(thetas_rad);
-            
-            nexttile; imagesc(X, k_mags, S_std'); axis xy; colorbar;
-            title([tit ' Standard S(k)']); xlabel('Theta'); ylabel('k');
-            
+        if analyze
+            SSTD(:,:,irep)=S_std;
+            DEFFSTD(:,:,irep)=Deff_std;
+            if S.bc==2
+                SMASK(:,:,irep)=S_mask;
+                DEFFMASK(:,:,irep)=Deff_mask;
+            end
+        end
+    end
+    %% PLOTTING
+    if plotting
+        S_std=mean(SSTD,3);
+        Deff_std=mean(DEFFSTD,3);
+        if S.bc==2
+            S_mask=mean(SMASK,3);
+            Deff_mask=mean(DEFFMASK,3);
+        end
+        
+        figure('Color','k'); tiledlayout(2,2);
+        if S.bc == 2, tit='PBC'; else, tit='SBC'; end
+        X = rad2deg(thetas_rad);
+        
+        nexttile; imagesc(X, k_mags, S_std'); axis xy; colorbar;
+        title([tit ' Standard S(k)']); xlabel('Theta'); ylabel('k');
+
+        if S.bc==2           
             nexttile; imagesc(X, k_mags, S_mask'); axis xy; colorbar;
             title([tit ' Masked S(k)']); xlabel('Theta'); ylabel('k');
+        end
+    
+        nexttile; imagesc(X, k_mags, Deff_std'); axis xy; colorbar;
+        title([tit ' Standard Deff']); xlabel('Theta'); ylabel('k');
         
-            nexttile; imagesc(X, k_mags, Deff_std'); axis xy; colorbar;
-            title([tit ' Standard Deff']); xlabel('Theta'); ylabel('k');
-        
+        if S.bc==2
             nexttile; imagesc(X, k_mags, Deff_mask'); axis xy; colorbar;
             title([tit ' Masked Deff']); xlabel('Theta'); ylabel('k');
         end
+
+        figure
+        plot(X,S_std(:,1))
+        hold
+        plot(X,S_std(:,2))
+        plot(X,S_std(:,3))
+        plot(X,S_std(:,4))
+        plot(X,S_std(:,5))
+        plot(X,S_std(:,6))
+        plot(X,S_std(:,7))
+        plot(X,S_std(:,8))
+        plot(X,S_std(:,9))
+        title([tit ' S(k,theta) for raw box']);
+        if S.bc==2
+            figure
+            plot(X,S_mask(:,1))
+            hold
+            plot(X,S_mask(:,2))
+            plot(X,S_mask(:,3))
+            plot(X,S_mask(:,4))
+            plot(X,S_mask(:,5))
+            plot(X,S_mask(:,6))
+            plot(X,S_mask(:,7))
+            plot(X,S_mask(:,8))
+            plot(X,S_mask(:,9))
+            title([tit ' S(k,theta) for circular inscribed domain']);
+        end
+        figure
+        plot(X,Deff_std(:,1))
+        hold
+        plot(X,Deff_std(:,2))
+        plot(X,Deff_std(:,3))
+        plot(X,Deff_std(:,4))
+        plot(X,Deff_std(:,5))
+        plot(X,Deff_std(:,6))
+        plot(X,Deff_std(:,7))
+        plot(X,Deff_std(:,8))
+        plot(X,Deff_std(:,9))
+        title([tit ' Deff(k,theta) for raw box']);
+        if S.bc==2
+            figure
+            plot(X,Deff_mask(:,1))
+            hold
+            plot(X,Deff_mask(:,2))
+            plot(X,Deff_mask(:,3))
+            plot(X,Deff_mask(:,4))
+            plot(X,Deff_mask(:,5))
+            plot(X,Deff_mask(:,6))
+            plot(X,Deff_mask(:,7))
+            plot(X,Deff_mask(:,8))
+            plot(X,Deff_mask(:,9))
+            title([tit ' Deff(k,theta) for circular inscribed domain']);
+        end
+        figure
+        scatter(p(:,1,end),p(:,2,end),50,'filled')
+        axis equal
+        title([tit ' final positions of particles']);
     end
 end
 
@@ -359,4 +463,79 @@ function D = get_deff(rho_t, max_lag, dt, k_val)
         p = polyfit(time(idx), log(F_norm(idx)), 1);
         D = -p(1) / k_val^2;
     end
+end
+
+%%
+plot_polar_surface(thetas_rad, k_mags, Deff_mask)
+%%
+
+function plot_polar_surface(thetas, ks, Deff)
+    % PLOT_POLAR_SURFACE
+    % Inputs:
+    %   thetas: 1D array of angles in radians
+    %   ks:     1D array of k magnitudes
+    %   Deff:   2D matrix (nTheta x nK)
+    
+    % 1. SYMMETRIZE TO 360 (Optional but recommended for visual impact)
+    % If your data is 0-180, we mirror it to 0-360 to show the full "Flower"
+    if max(thetas) <= pi + 0.1
+        fprintf('Mirroring data from 180 to 360 for visualization...\n');
+        thetas_full = [thetas; thetas + pi];
+        Deff_full = [Deff; Deff]; % Duplicate data for the second half
+    else
+        thetas_full = thetas;
+        Deff_full = Deff;
+    end
+    
+    % 2. CREATE POLAR GRID
+    % Create 2D grids. 
+    % Note: meshgrid(x,y) puts x on columns and y on rows.
+    [TH, R] = meshgrid(thetas_full, ks);
+    
+    % 3. CONVERT TO CARTESIAN (X, Y)
+    % These are the coordinates for the floor of the plot
+    X = R .* cos(TH);
+    Y = R .* sin(TH);
+    
+    % 4. PREPARE Z-DATA
+    % Deff_full is usually (nTheta x nK). 
+    % meshgrid produced (nK x nTheta). We must TRANSPOSE Deff.
+    Z = Deff_full'; 
+    
+    % 5. PLOT SURFACE
+    figure('Color','w', 'Position', [100 100 1000 800]);
+    
+    % surf(X, Y, Z) creates the 3D topology
+    h = surf(X, Y, Z);
+    
+    % 6. STYLING (The "Publication" Look)
+    shading interp;          % Smooth out the grid lines
+    colormap(copper);         % High contrast colormap
+    colorbar;
+    
+    % Lighting to show 3D texture
+    camlight left; 
+    lighting gouraud;
+    material dull; 
+    
+    % Axis cleanup
+    axis equal;              % Make circles look circular
+    axis off;                % Hide the square box axes
+    view(0, 90);             % Start with Top-Down view (Heatmap style)
+    
+    % Add a title
+    title('D_{eff}(k, \theta) Polar Topography', 'FontSize', 16);
+    
+    % 7. ADD REFERENCE RINGS (The "Target")
+    % Draw circles at specific k values to visualize the shells
+    hold on;
+    for k_val = ks
+        theta_ring = 0:0.01:2*pi;
+        plot3(k_val*cos(theta_ring), k_val*sin(theta_ring), ...
+              ones(size(theta_ring))*max(Z(:)), ...
+              'k-', 'Color', [1 1 1 0.3]); % Faint white rings
+    end
+    
+    % 8. INSTRUCTIONS
+    disp('Rotate the plot using the 3D Rotate tool to see the "Mountains"!');
 end
