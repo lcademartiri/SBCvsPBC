@@ -36,7 +36,7 @@ filenameseries='2D_%d_%d.mat';
 moviemaking=true;
 allpos=true;
 analyze=true;
-plotting=true;
+plotting=false;
 
 %% SIMULATION PARAMETERS
 S.rp=1;
@@ -91,7 +91,7 @@ c(c(:,6)~=1 & c(:,4)~=1,:)=[];
 c(:,1)=(1:size(c,1))';
 %% LOOP
 
-for ic=9:size(c,1)
+for ic=1:size(c,1)
     for irep=1:reps
 
         posfilename=sprintf(filenameseries,ic,irep);
@@ -290,7 +290,7 @@ for ic=9:size(c,1)
             % Mask is defined on the COM-corrected 'p'
             if S.bc == 2 % PBC
 				R_mask = S.L/2;
-				dist_sq = sum(p.^2, 2); 
+				dist_sq = sum(pt.^2, 2); 
 				mask = squeeze(dist_sq < R_mask^2); 
 				N_eff = mean(sum(mask, 1));				
             else % SBC
@@ -353,6 +353,17 @@ for ic=9:size(c,1)
                 DEFFMASK(:,:,irep)=Deff_mask;
             end
         end
+    end
+    if analyze
+        SSF_unm{ic,1}=mean(SSTD,3);
+        Deff_unm{ic,1}=mean(DEFFSTD,3);
+        if S.bc==2
+            SSF_m{ic,1}=mean(SMASK,3);
+            Deff_m{ic,1}=mean(DEFFMASK,3);
+        end
+        KMAGS{ic,1}=k_mags;
+        THETAS{ic,1}=thetas_rad;
+        clear SSTD SMASK DEFFSTD DEFFMASK
     end
     %% PLOTTING
     if plotting
@@ -442,6 +453,11 @@ for ic=9:size(c,1)
     end
 end
 
+if analyze
+    save([output_folder,'\','2Dtoymodel.mat'],'c','S','SSF_unm','SSF_m','Deff_m','Deff_unm','KMAGS','THETAS','-v7.3');
+end
+
+
 % --- HELPER: PERIODIC CENTER OF MASS ---
 function COM = get_pbc_com(pos, br)
     % Map positions to angles [-pi, pi]
@@ -477,7 +493,7 @@ function D = get_deff(rho_t, max_lag, dt, k_val)
 end
 
 %%
-plot_polar_surface(thetas_rad, k_mags, S_std,COLORMAPS)
+plot_polar_surface(thetas_rad, k_mags, Deff_std,COLORMAPS)
 %%
 
 function plot_polar_surface(thetas, ks, Deff,COLORMAPS)
