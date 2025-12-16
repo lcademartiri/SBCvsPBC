@@ -184,6 +184,12 @@ for irep=1:10
             nx = sin_th * cos(el); % Unit Direction Vector n_hat
             ny = sin_th * sin(el); % Unit Direction Vector n_hat
             nz = cos_th; % Unit Direction Vector n_hat
+            if S.bc==3
+                [nfcc,~]=FCCrotate([nx,ny,nz],[1,1,1]./norm([1,1,1]));
+                nx=nfcc(1);
+                ny=nfcc(2);
+                nz=nfcc(3);
+            end
             
             for k_idx = 1:nK
                 k_val = k_mags(k_idx);
