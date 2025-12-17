@@ -46,6 +46,9 @@ load(filename)
 p=POS;
 clear POS PDF PDFT SSF
 [N, dim, T_steps] = size(p);
+clearinghouse=true(ic,1);
+clearinghouse(ic,1)=false;
+EDGES(clearinghouse,:)={[]};
 
 %% POST LOAD
 
