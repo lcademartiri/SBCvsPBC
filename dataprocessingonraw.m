@@ -6,9 +6,9 @@ clc
 
 %% DATA SELECTION
 
-ic=30;
-filenameseries='SBCvsPBC_%d.mat';
-filenameseriesdata='SBCvsPBC_%d_DATA.mat';
+ic=25;
+filenameseries='SBCvsPBC_onlypdf_%d.mat';
+filenameseriesdata='SBCvsPBC_onlypdf_%d_DATA.mat';
 
 %% FLAGS
 plottingenabled=true;
@@ -470,17 +470,24 @@ end
        
 % --- determining the ideal gas distance distribution by Montecarlo ---
 fprintf('condition: %d - boundary condition: %d -  phi: %.3f - calculating pair distribution function\n', ic, S.bc, S.phi);
-if S.bc==1
-    filepdfdenom = sprintf('PDFdenom_SBC_%.0e_%.0e_%.0f.mat',S.rp,S.phi,S.N);
-elseif S.bc==2
-    filepdfdenom = sprintf('PDFdenom_PBCc_%.0e_%.0e_%.0f.mat',S.rp,S.phi,S.N);
-elseif S.bc==3
-    filepdfdenom = sprintf('PDFdenom_PBCFCC_%.0e_%.0e_%.0f.mat',S.rp,S.phi,S.N);
-end
-if exist(filepdfdenom,'file')
-    load(filepdfdenom,'gdenominator');
+if S.bc~=1
+    if S.bc==1
+        filepdfdenom = sprintf('PDFdenom_SBC_%.0e_%.0e_%.0f.mat',S.rp,S.phi,S.N);
+    elseif S.bc==2
+        filepdfdenom = sprintf('PDFdenom_PBCc_%.0e_%.0e_%.0f.mat',S.rp,S.phi,S.N);
+    elseif S.bc==3
+        filepdfdenom = sprintf('PDFdenom_PBCFCC_%.0e_%.0e_%.0f.mat',S.rp,S.phi,S.N);
+    end
+    if exist(filepdfdenom,'file')
+        load(filepdfdenom,'gdenominator');
+    else
+        gdenominator=PDFdenom(S,PDF,1e5,data_folder);
+    end
 else
-    gdenominator=PDFdenom(S,PDF,1e5,data_folder);
+    shellcenters=PDF.pdfedges{3}(1:end-1)+0.5*(PDF.pdfedges{3}(2)-PDF.pdfedges{3}(1));
+    shellvolumes=(4/3)*pi*PDF.pdfedges{3}(2:end).^3-(4/3)*pi*PDF.pdfedges{3}(1:end-1).^3;
+    ndens=S.N/S.bv;
+    gdenominator=ndens.*shellvolumes.*(S.N/2);
 end
 % ---
 % --- determine the g
