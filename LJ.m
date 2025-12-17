@@ -31,7 +31,7 @@ addpath(output_folder)
 %% SERIES NAME
 
 filenamecollisionseries='SBCvsPBC_onlypdf_%d.mat';
-filenamecollisionseries_temp='SBCvsPBC_onlypdf_%d.mat';
+filenamecollisionseries_temp='SBCvsPBC_onlypdf_temp_%d.mat';
 
 %% FIXED PHYSICAL PARAMETERS
 
@@ -101,7 +101,7 @@ CONDS=effective_diffusivity(data_folder,CONDS,P,C);
 
 %% SIMULATION EXECUTION
 
-for ic=26
+for ic=25:26
 
     if CONDS.alpha(ic,1)==0
         continue
@@ -769,6 +769,6 @@ for ic=26
             delete([output_folder,'\',tempfilename]);
         end
     end
-    clear DATA DEGREES AV CLUSTERS PDF* SSF* DS
+    clear DATA DEGREES EDGES AV CLUSTERS PDF* SSF* DS
 end
 clearvars -except S V P C
