@@ -30,8 +30,8 @@ addpath(output_folder)
 
 %% SERIES NAME
 
-filenamecollisionseries='SBCvsPBC_nogg_%d.mat';
-filenamecollisionseries_temp='SBCvsPBC_nogg_temp_%d.mat';
+filenamecollisionseries='SBCvsPBC_onlypdf_%d.mat';
+filenamecollisionseries_temp='SBCvsPBC_onlypdf_%d.mat';
 
 %% FIXED PHYSICAL PARAMETERS
 
@@ -44,14 +44,14 @@ C.hydrationlayer=2.5e-10;
 %% OPTIONAL SWITCHES
 
 P.pdf=1;
-P.ssf=1;
+P.ssf=0;
 P.dens=0;
-P.allpos=1;
+P.allpos=0;
 P.equipartition=0;
 P.cluster=0;
 P.exvol=0;
 P.collkin=1;
-P.ghostghost=0;
+P.ghostghost=1;
 P.io_enabled=true;
 P.correctionwindow=0; % window of the correction; 0 = no correction, 1e6 = S.rc, any other value X=X*S.rp;
 P.convergencemode=1; % 1  by step numbers, 2 by coll numbers, 3 by coll rates convergence
@@ -64,7 +64,7 @@ P.rfstepsforeffdiffest=10000; % number of random walk steps that I need to colle
 P.nodisp=1e7;  % size of displacement library
 P.reps=1; % number of replicates
 P.maxcoll=1e7; % minimum number of collisions to measure
-P.maxsteps=1e6; % maximum number of steps to make when doing pdfs
+P.maxsteps=1e5; % maximum number of steps to make when doing pdfs
 P.kuhnmultiplier=200; % multiplier of taur that is used to either include or exclude persistence
 P.kuhnmultiplierVACF=200; % multiplier of taur that is used to calculate autocorrelation
 P.convergencewindows=[10000,1000]; % number of timesteps over which to describe the evolution of k in time; number of steps over which to evaluate convergence
@@ -101,8 +101,7 @@ CONDS=effective_diffusivity(data_folder,CONDS,P,C);
 
 %% SIMULATION EXECUTION
 
-for ic=30
-
+for ic=26
 
     if CONDS.alpha(ic,1)==0
         continue
@@ -587,21 +586,18 @@ for ic=30
             Nreal=size(p,1);
             if P.pdf==1
                 if mod(qs,P.pdfthermints)==0 | qs==1
-                    if S.bc==1
-                        ppdf=p;
-                    else
-                        ppdf=p;
-                    end
                     clear PDFD
                     % GET DISTANCE DISTRIBUTION
                     % calculate all distance vectors
-                    if S.bc==1 || S.bc==4
-                        PDFD(:,:,1)=(ppdf(:,1)-ppdf(:,1)'); 
-                        PDFD(:,:,2)=(ppdf(:,2)-ppdf(:,2)');
-                        PDFD(:,:,3)=(ppdf(:,3)-ppdf(:,3)');
-                        PDFD=reshape(PDFD,[],3);
-                        % eliminate distances between identical particles
-                        PDFD(PDFD(:,1)==0,:)=[];
+                    if S.bc==1
+                        ppdf=[p;pgp];
+                        dx=(ppdf(:,1)-ppdf(:,1)'); 
+                        dy=(ppdf(:,2)-ppdf(:,2)');
+                        dz=(ppdf(:,3)-ppdf(:,3)');
+                        keep_mask = true(size(ppdf,1), size(ppdf,1));
+                        keep_mask(1:size(ppdf,1)+1:end) = false; % eliminate self-distances
+                        keep_mask(S.N+1:end, S.N+1:end) = false; % Exclude Ghost-vs-Ghost block
+                        PDFD = [dx(keep_mask), dy(keep_mask), dz(keep_mask)];
                     else
                         PDFD = mic_all_pair_displacements(p(:,1:3), S); % returns Mx3 array of minimum-image displacement vectors (M = N*(N-1))
                     end

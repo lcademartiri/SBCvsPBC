@@ -72,6 +72,8 @@ if S.bc==2
         sput{irep,1}=spu{irep,1}-COMu;
     end
 elseif S.bc==3
+    [~,rotmat]=FCCrotate([1,0,0],[1,1,1]./norm([1,1,1]));
+    rotmat=rotmat';
     for irep=1:10
         spu{irep,1} = zeros(size(sp{irep,1})); % initialize unwrapped positions array
         spu{irep,1}(:,:,1) = sp{irep,1}(:,:,1); % starting positions
@@ -84,6 +86,7 @@ elseif S.bc==3
             dp_mic = dp_frac * A_mat; % D. Convert back to Cartesian displacement
             spu{irep,1}(:,:,t) = spu{irep,1}(:,:,t-1) + dp_mic; % E. Accumulate
         end
+
         COMu = mean(spu{irep,1}, 1);
         sput{irep,1} = spu{irep,1} - COMu;
     end
@@ -176,19 +179,21 @@ for irep=1:10
 
     for az_idx = 1:nAz
         az = az_rad(az_idx);
-        sin_th = sin(az); 
-        cos_th = cos(az);
+        sin_az = sin(az); 
+        cos_az = cos(az);
         
         for el_idx = 1:nEl
             el = el_rad(el_idx);
-            nx = sin_th * cos(el); % Unit Direction Vector n_hat
-            ny = sin_th * sin(el); % Unit Direction Vector n_hat
-            nz = cos_th; % Unit Direction Vector n_hat
+            cos_el = cos(el);
+            sin_el = sin(el);
+            nx = cos_az * cos_el; % Unit Direction Vector n_hat
+            ny = sin_az * cos_el; % Unit Direction Vector n_hat
+            nz = sin_el; % Unit Direction Vector n_hat
             if S.bc==3
-                [nfcc,~]=FCCrotate([nx,ny,nz],[1,1,1]./norm([1,1,1]));
-                nx=nfcc(1);
-                ny=nfcc(2);
-                nz=nfcc(3);
+                ntemp=rotmat*[nx;ny;nz];
+                nx=ntemp(1);
+                ny=ntemp(2);
+                nz=ntemp(3);
             end
             
             for k_idx = 1:nK
@@ -196,6 +201,7 @@ for irep=1:10
                 qx = k_val * nx; % 3D q-vector
                 qy = k_val * ny; % 3D q-vector
                 qz = k_val * nz; % 3D q-vector
+
             
                 % -- STATIC S(k) --
                 % Use wrapped coords (pt)
@@ -277,7 +283,7 @@ clear sp* phase* pt pu* px py pz seg_* F_AVG_*
 % test0el_full=test0el_full';
 % OriginData=[AZ_GRID(:),K_GRID(:),test0el_full(:)];
 
-%% --- PDF ANALYSIS --------------------------------------------------
+%% --- THERMALIZATION ANALYSIS --------------------------------------------------
 
 load(filename,'PDFT','PDF')
 % --- general purpose data
@@ -427,6 +433,8 @@ end
 clear peak* opts R2* bottom top x* y* edges* gof cf de iwin i0 ft count_azs SSres SStot
 % ---
 
+%% --- ANGULARLY RESOLVED PDF ANALYSIS --------------------------------------------------
+
 % --- THERMALIZED DATA ----------------------------------------------
 fprintf('condition: %d - boundary condition: %d -  phi: %.3f - calculate aggregated, fully thermalized data\n', ic, S.bc, S.phi);
 % --- thermalized means
@@ -455,7 +463,7 @@ end
 % ---
 % -------------------------------------------------------------------
 
-% -------------------------------------------------------------------
+%% --- RADIAL PDF ANALYSIS --------------------------------------------------
        
 % --- determining the ideal gas distance distribution by Montecarlo ---
 fprintf('condition: %d - boundary condition: %d -  phi: %.3f - calculating pair distribution function\n', ic, S.bc, S.phi);
@@ -497,6 +505,7 @@ clear PDFT STD_MMEAN* MMEAN* AZ EL RHO AZS ELS
 % --- per particle ---
 colls=EDGES{ic,1};
 clear EDGES
+colls(colls(:,1)==0,:)=[];
 idxswap=colls(:,3)<colls(:,2);
 colls(idxswap,[2 3])=colls(idxswap,[3 2]);
 colls=sortrows(colls,[2 1],"ascend");
