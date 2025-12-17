@@ -6,7 +6,7 @@ clc
 
 %% DATA SELECTION
 
-ic=29;
+ic=26;
 filenameseries='SBCvsPBC_%d.mat';
 filenameseriesdata='SBCvsPBC_%d_DATA.mat';
 
