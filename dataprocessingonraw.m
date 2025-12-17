@@ -42,10 +42,13 @@ cmaplibrary=loadColormaps();
 %% LOAD FILE
 
 filename=sprintf(filenameseries,ic);
-load(filename)
+load(filename,'EDGES')
 p=POS;
 clear POS PDF PDFT SSF
 [N, dim, T_steps] = size(p);
+cleaner=true(ic,1);
+cleaner(ic,1)=false;
+EDGES(cleaner,:)={[]};
 
 %% POST LOAD
 
