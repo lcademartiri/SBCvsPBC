@@ -30,8 +30,8 @@ addpath(output_folder)
 
 %% SERIES NAME
 
-filenamecollisionseries='SBCvsPBC_onlypdf_%d.mat';
-filenamecollisionseries_temp='SBCvsPBC_onlypdf_temp_%d.mat';
+filenamecollisionseries='SBCvsPBC_fixedPOT_%d.mat';
+filenamecollisionseries_temp='SBCvsPBC_fixedPOT_temp_%d.mat';
 
 %% FIXED PHYSICAL PARAMETERS
 
@@ -44,9 +44,9 @@ C.hydrationlayer=2.5e-10;
 %% OPTIONAL SWITCHES
 
 P.pdf=1;
-P.ssf=0;
+P.ssf=1;
 P.dens=0;
-P.allpos=0;
+P.allpos=1;
 P.equipartition=0;
 P.cluster=0;
 P.exvol=0;
@@ -64,7 +64,7 @@ P.rfstepsforeffdiffest=10000; % number of random walk steps that I need to colle
 P.nodisp=1e7;  % size of displacement library
 P.reps=1; % number of replicates
 P.maxcoll=1e7; % minimum number of collisions to measure
-P.maxsteps=1e5; % maximum number of steps to make when doing pdfs
+P.maxsteps=1e6; % maximum number of steps to make when doing pdfs
 P.kuhnmultiplier=200; % multiplier of taur that is used to either include or exclude persistence
 P.kuhnmultiplierVACF=200; % multiplier of taur that is used to calculate autocorrelation
 P.convergencewindows=[10000,1000]; % number of timesteps over which to describe the evolution of k in time; number of steps over which to evaluate convergence
@@ -101,7 +101,7 @@ CONDS=effective_diffusivity(data_folder,CONDS,P,C);
 
 %% SIMULATION EXECUTION
 
-for ic=25:26
+for ic=29:30
 
     if CONDS.alpha(ic,1)==0
         continue
@@ -152,11 +152,9 @@ for ic=25:26
     else
         S.correctionwindow=P.correctionwindow*S.rp;
     end
-    if S.bc==2 || S.bc==3
-        [~, cmdout] = system('wmic cpu get L2CacheSize, L3CacheSize /value');
-        tokens = regexp(cmdout, '\d+', 'match');
-        S.cacheSizeMB = (max(str2double(tokens))/1024)/feature('numCores');
-    end
+    [~, cmdout] = system('wmic cpu get L2CacheSize, L3CacheSize /value');
+    tokens = regexp(cmdout, '\d+', 'match');
+    S.cacheSizeMB = (max(str2double(tokens))/1024)/feature('numCores');
     S.gtrig=S.rc;
     if S.bc==3 % THIS IF CONDITION IS VERIFIED AND CORRECT
         S.fcc.unitvecs=V.fcc_unitvecs;

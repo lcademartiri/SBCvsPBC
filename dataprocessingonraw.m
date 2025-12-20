@@ -6,9 +6,9 @@ clc
 
 %% DATA SELECTION
 
-ic=25;
-filenameseries='SBCvsPBC_onlypdf_%d.mat';
-filenameseriesdata='SBCvsPBC_onlypdf_%d_DATA.mat';
+ic=28;
+filenameseries='SBCvsPBC_%d.mat';
+filenameseriesdata='SBCvsPBC_%d_DATA.mat';
 
 %% FLAGS
 plottingenabled=true;
@@ -494,7 +494,7 @@ end
 fprintf('condition: %d - boundary condition: %d -  phi: %.3f - average pairs numerator\n', ic, S.bc, S.phi);
 gnumerator=sum(RHO(:,idtherm:end),2)./(size(RHO,2)-idtherm); % average number of pairs in that bin
 g=gnumerator./gdenominator;
-g=[PDF.pdfedges{3}(1:end-1),g];
+g=[PDF.pdfedges{3}(1:end-1)+0.5*(PDF.pdfedges{3}(2:end)-PDF.pdfedges{3}(1:end-1)),g];
 % ---
 % --- plot g
 if plottingenabled==1
