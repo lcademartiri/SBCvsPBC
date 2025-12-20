@@ -6,7 +6,7 @@ clc
 
 %% DATA SELECTION
 
-ic=28;
+ic=25;
 filenameseries='SBCvsPBC_%d.mat';
 filenameseriesdata='SBCvsPBC_%d_DATA.mat';
 
@@ -515,11 +515,24 @@ clear PDFT STD_MMEAN* MMEAN* AZ EL RHO AZS ELS
 % --- per particle ---
 colls=EDGES{ic,1};
 clear EDGES
-colls(colls(:,1)==0,:)=[];
-idxswap=colls(:,3)<colls(:,2);
+colls(colls(:,1)==0,:)=[]; % eliminate filler
+
+for ii=1:S.N
+    idxii=sum(colls(:,2:3)==ii,2)>0;
+    PPARTCOLLS{ii,1}=colls(idxii,:);
+    for iii=ii+1:S.N
+        idxiii=(colls(:,2)==ii & colls(:,3)==iii) | (colls(:,3)==ii & colls(:,2)==iii);
+        PPAIRCOLLS{ii,iii}=colls(idxiii,:);
+    end
+    disp(ii)
+end
+
+
+idxswap=colls(:,3)<colls(:,2); % make it so ID of first collider < ID of second
 colls(idxswap,[2 3])=colls(idxswap,[3 2]);
-colls=sortrows(colls,[2 1],"ascend");
-ds=zeros(size(colls,1)-1,1);
+colls=sortrows(colls,[2 1],"ascend"); % sort list of collisions by first collider ID and then step#
+ds=zeros(size(colls,1)-1,1); % initialize ds
+% loop grabbing all collisions associated with one particle
 q=1;
 [~,b]=ismember((1:S.N)',colls(:,2));
 for ib=1:size(b,1)-1
