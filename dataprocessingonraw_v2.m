@@ -7,11 +7,14 @@ clc
 %% DATA SELECTION
 
 ic=27;
-filenameseries='SBCvsPBC_fixedPOT_%d.mat';
-filenameseriesdata='SBCvsPBC_fixedPOT_%d_DATA.mat';
+filenameseries='SBCvsPBC_%d.mat';
+filenameseriesdata='SBCvsPBC_%d_DATA.mat';
 
 %% FLAGS
 plottingenabled=true;
+dodeff=true;
+dovanhove=true;
+
 
 %% FOLDERS
 
@@ -58,8 +61,8 @@ COMw = mean(p,1);   % wrapped COM
 pt=p-COMw; % COM-subtracted wrapped coordinates
 slices=(1:T_steps/10:T_steps)';
 for i0=1:10
-    sp{i0,1}=p(:,:,slices(i0):slices(i0)+T_steps/10-1);
-    spt{i0,1}=pt(:,:,slices(i0):slices(i0)+T_steps/10-1);
+    sp{i0,1}=p(:,:,slices(i0):slices(i0)+T_steps/10-1); % sliced non-COM-subtracted wrapped trajectories
+    spt{i0,1}=pt(:,:,slices(i0):slices(i0)+T_steps/10-1); % sliced COM-subtracted wrapped trajectories
 end
 if S.bc==2
     for irep=1:10
@@ -69,10 +72,10 @@ if S.bc==2
             dp = sp{irep,1}(:,:,t) - sp{irep,1}(:,:,t-1); % displacements
             dp(dp >  S.br) = dp(dp >  S.br) - 2*S.br; % MIC #1
             dp(dp < -S.br) = dp(dp < -S.br) + 2*S.br; % MIC #1
-            spu{irep,1}(:,:,t) = spu{irep,1}(:,:,t-1) + dp;
+            spu{irep,1}(:,:,t) = spu{irep,1}(:,:,t-1) + dp; % sliced non-COM-subtracted UNwrapped trajectories
         end
         COMu = (mean(spu{irep,1},1));
-        sput{irep,1}=spu{irep,1}-COMu;
+        sput{irep,1}=spu{irep,1}-COMu; % sliced COM-subtracted UNwrapped trajectories
     end
 elseif S.bc==3
     [~,rotmat]=FCCrotate([1,0,0],[1,1,1]./norm([1,1,1]));
@@ -95,202 +98,355 @@ elseif S.bc==3
     end
 end
 
+% p     : whole     non-COM-corrected   wrapped     trajectories
+% sp    : sliced    non-COM-corrected   wrapped     trajectories
+% spt   : sliced    COM-corrected       wrapped     trajectories
+% spu   : sliced    non-COM-corrected   unwrapped   trajectories
+% sput  : sliced    COM-corrected       unwrapped   trajectories
+
 %% WINDOWS
 
-% K-WINDOW
-k_fundamental = 2*pi/(2*S.br);
-k_max=pi/S.rp;
-k_mags=(k_fundamental:k_fundamental:k_max)';
-k_mags=sort([k_mags;k_fundamental.*[sqrt(2);sqrt(3);pi]]);
-nK = length(k_mags);
-
-% Fibonacci vectors
-az=fibonacci_sphere(600);
-[az,el,~]=cart2sph(az(:,1),az(:,2),az(:,3));
-azel=[az,el];
-azel(azel(:,1)<0,:)=[];
-equator=linspace(0,pi,181)';
-equator(end,:)=[];
-equator(1,2)=0;
-azel_rad=[azel;equator];
-azel_deg=rad2deg(azel_rad);
-nAzel=size(azel_rad,1);
-clear az el equator azel
-% 
-% % AZIMUTH-WINDOW
-% az_deg = (0:1:170)';
-% az_rad = deg2rad(az_deg); 
-% nAz = length(az_rad);
-% 
-% % ELEVATION-WINDOW
-% el_deg = 0;
-% el_rad = deg2rad(el_deg); 
-% nEl = length(el_rad);
-
-% DYNAMICS
-max_lag = T_steps/100; 
-
-% OUTPUT ARRAY INITIALIZATION
-% output arrays containing the means across replicates
-S_std = zeros(nAzel, nK);  
-S_mask = zeros(nAzel, nK); 
-Deff_std = zeros(nAzel, nK);
-Deff_mask = zeros(nAzel, nK);
-
-% Scalar Maps (Keep Replicates for Error Bars)
-    % Dimensions: Theta x Phi x K x Replicates
-SSTD      = zeros(nAzel, nK, 10);
-DEFFSTD   = zeros(nAzel, nK, 10);
-GAMMASTD  = zeros(nAzel, nK, 10);
-
-% Full Time Correlation Function (Average Only)
-% Dimensions: Theta x Phi x K x Time
-% Using 'single' to save 50% RAM
-F_AVG_STD = zeros(nAzel, nK, max_lag+1);
-
-if S.bc == 2 || S.bc==3
-    SMASK     = zeros(nAzel, nK, 10);
-    DEFFMASK  = zeros(nAzel, nK, 10);
-    GAMMAMASK = zeros(nAzel, nK, 10);
-    F_AVG_MASK= zeros(nAzel, nK, max_lag+1);
-end
-
-%% MASK
-
-% Mask is defined on the COM-corrected 'p'
-if S.bc == 2 % PBC
-    for irep=1:10
-	    dist_sq = sum(spt{irep,1}.^2, 2); 
-	    mask{irep,1} = squeeze(dist_sq < S.br^2); 
-	    N_eff{irep,1} = mean(sum(mask{irep,1}, 1));
+if dodeff
+    % K-WINDOW
+    k_fundamental = 2*pi/(2*S.br);
+    k_max=pi/S.rp;
+    k_mags=(k_fundamental:k_fundamental:k_max)';
+    k_mags=sort([k_mags;k_fundamental.*[sqrt(2);sqrt(3);pi]]);
+    nK = length(k_mags);
+    
+    % Fibonacci vectors
+    az=fibonacci_sphere(600);
+    [az,el,~]=cart2sph(az(:,1),az(:,2),az(:,3));
+    azel=[az,el];
+    azel(azel(:,1)<0,:)=[];
+    equator=linspace(0,pi,181)';
+    equator(end,:)=[];
+    equator(1,2)=0;
+    azel_rad=[azel;equator];
+    azel_deg=rad2deg(azel_rad);
+    nAzel=size(azel_rad,1);
+    clear az el equator azel
+    
+    % DYNAMICS
+    max_lag = T_steps/100; 
+    
+    % OUTPUT ARRAY INITIALIZATION
+    % output arrays containing the means across replicates
+    S_std = zeros(nAzel, nK);  
+    S_mask = zeros(nAzel, nK); 
+    Deff_std = zeros(nAzel, nK);
+    Deff_mask = zeros(nAzel, nK);
+    
+    % Scalar Maps (Keep Replicates for Error Bars)
+        % Dimensions: Theta x Phi x K x Replicates
+    SSTD      = zeros(nAzel, nK, 10);
+    DEFFSTD   = zeros(nAzel, nK, 10);
+    GAMMASTD  = zeros(nAzel, nK, 10);
+    
+    % Full Time Correlation Function (Average Only)
+    % Dimensions: Theta x Phi x K x Time
+    % Using 'single' to save 50% RAM
+    F_AVG_STD = zeros(nAzel, nK, max_lag+1);
+    
+    if S.bc == 2 || S.bc==3
+        SMASK     = zeros(nAzel, nK, 10);
+        DEFFMASK  = zeros(nAzel, nK, 10);
+        GAMMAMASK = zeros(nAzel, nK, 10);
+        F_AVG_MASK= zeros(nAzel, nK, max_lag+1);
     end
-elseif S.bc==3
-    for irep=1:10
-        box_heights = abs(dot(S.fcc.A, S.fcc.normals, 2));
-        R_mask = min(box_heights) / 2; % The inscribed radius is half the smallest height
-        dist_sq = sum(spt{irep,1}.^2, 2); % (N x 1 x T_seg)
-        mask{irep,1} = squeeze(dist_sq < R_mask^2);
-        N_eff_t = sum(mask{irep,1}, 1);
-        N_eff{irep,1} = mean(N_eff_t);
-        if N_eff{irep,1} < 1, N_eff{irep,1} = 1; end
-    end
-elseif S.bc==1 % SBC
-    for irep=1:10
-        mask{irep,1} = true(S.N, 1, T_steps/10);
-        N_eff{irep,1} = S.N;
-    end
-end
-
-%% SUPERLOOP
-for irep=1:10
-    % initialize replicate storage
-    seg_S = zeros(nAzel, nK);
-    seg_D = zeros(nAzel, nK);
-    seg_G = zeros(nAzel, nK);
-    if S.bc==2 || S.bc==3
-        seg_Sm = zeros(nAzel, nK);
-        seg_Dm = zeros(nAzel, nK);
-        seg_Gm = zeros(nAzel, nK);
-    end
-    for idir=1:nAzel
-        az = azel_rad(idir,1);
-        sin_az = sin(az); 
-        cos_az = cos(az);
-        el = azel_rad(idir,2);
-        cos_el = cos(el);
-        sin_el = sin(el);
-        nx = cos_az * cos_el; % Unit Direction Vector n_hat
-        ny = sin_az * cos_el; % Unit Direction Vector n_hat
-        nz = sin_el; % Unit Direction Vector n_hat
-        if S.bc==3
-            ntemp=rotmat*[nx;ny;nz];
-            nx=ntemp(1);
-            ny=ntemp(2);
-            nz=ntemp(3);
-        end            
-        for k_idx = 1:nK
-            k_val = k_mags(k_idx);
-            qx = k_val * nx; % 3D q-vector
-            qy = k_val * ny; % 3D q-vector
-            qz = k_val * nz; % 3D q-vector
-
-            
-            % -- STATIC S(k) --
-            % Use wrapped coords (pt)
-            px = squeeze(spt{irep,1}(:,1,:)); 
-            py = squeeze(spt{irep,1}(:,2,:)); 
-            pz = squeeze(spt{irep,1}(:,3,:));
-            
-            % Dot product q*r
-            phase = -(qx.*px + qy.*py + qz.*pz);
-            E = exp(1i * phase);
-            
-            % Standard
-            rho_stat = sum(E, 1);
-            seg_S(idir, k_idx) = mean(abs(rho_stat).^2) / N;
-            
-            if S.bc == 2 || S.bc==3
-                rho_mask = sum(mask{irep,1} .* E, 1);
-                seg_Sm(idir, k_idx) = mean(abs(rho_mask).^2) / N_eff{irep,1};
-            end
-
-            % -- DYNAMICS Deff(k) --
-            % Use unwrapped coords (put)
-            if S.bc~=1
-                pux = squeeze(sput{irep,1}(:,1,:));
-                puy = squeeze(sput{irep,1}(:,2,:));
-                puz = squeeze(sput{irep,1}(:,3,:));
-            else
-                pux = squeeze(spt{irep,1}(:,1,:));
-                puy = squeeze(spt{irep,1}(:,2,:));
-                puz = squeeze(spt{irep,1}(:,3,:));
-            end
-            
-            phase_dyn = -(qx.*pux + qy.*puy + qz.*puz);
-            E_dyn = exp(1i * phase_dyn);
-            rho_dyn = sum(E_dyn, 1);
-            [F_curve, ~] = compute_acf(rho_dyn, max_lag);
-            [D_val, G_val] = fit_dynamics(F_curve, S.timestep, k_val);
-            
-            seg_D(idir, k_idx) = D_val;
-            seg_G(idir, k_idx) = G_val;
-            F_AVG_STD(idir, k_idx, :) = F_AVG_STD(idir, k_idx, :) + reshape((F_curve), 1, 1, []);
-            
-            if S.bc == 2 || S.bc==3
-                rho_dyn_m = sum(mask{irep,1} .* E_dyn, 1);
-                [F_curve_m, ~] = compute_acf(rho_dyn_m, max_lag);
-                [D_m, G_m] = fit_dynamics(F_curve_m, S.timestep, k_val);
-                seg_Dm(idir, k_idx) = D_m;
-                seg_Gm(idir, k_idx) = G_m;
-                F_AVG_MASK(idir, k_idx, :) = F_AVG_MASK(idir, k_idx, :) + reshape(single(F_curve_m), 1, 1, []);
-            end
-
-            disp([irep,idir, k_idx])
+    
+    %% MASK
+    
+    % Mask is defined on the COM-corrected 'p'
+    if S.bc == 2 % PBC
+        for irep=1:10
+	        dist_sq = sum(spt{irep,1}.^2, 2); 
+	        mask{irep,1} = squeeze(dist_sq < S.br^2); 
+	        N_eff{irep,1} = mean(sum(mask{irep,1}, 1));
+        end
+    elseif S.bc==3
+        for irep=1:10
+            box_heights = abs(dot(S.fcc.A, S.fcc.normals, 2));
+            R_mask = min(box_heights) / 2; % The inscribed radius is half the smallest height
+            dist_sq = sum(spt{irep,1}.^2, 2); % (N x 1 x T_seg)
+            mask{irep,1} = squeeze(dist_sq < R_mask^2);
+            N_eff_t = sum(mask{irep,1}, 1);
+            N_eff{irep,1} = mean(N_eff_t);
+            if N_eff{irep,1} < 1, N_eff{irep,1} = 1; end
+        end
+    elseif S.bc==1 % SBC
+        for irep=1:10
+            mask{irep,1} = true(S.N, 1, T_steps/10);
+            N_eff{irep,1} = S.N;
         end
     end
-    % Store segment
-    FSTD(:,:,:,irep)=F_AVG_STD;
-    SSTD(:,:,irep) = seg_S;
-    DEFFSTD(:,:,irep) = seg_D;
-    GAMMASTD(:,:,irep) = seg_G;
-    if S.bc == 2 || S.bc==3
-        FMASK(:,:,:,irep)=F_AVG_MASK;
-        SMASK(:,:,irep) = seg_Sm;
-        DEFFMASK(:,:,irep) = seg_Dm;
-        GAMMAMASK(:,:,irep) = seg_Gm;
+    
+    %% SUPERLOOP
+    for irep=1:10
+        % initialize replicate storage
+        seg_S = zeros(nAzel, nK);
+        seg_D = zeros(nAzel, nK);
+        seg_G = zeros(nAzel, nK);
+        if S.bc==2 || S.bc==3
+            seg_Sm = zeros(nAzel, nK);
+            seg_Dm = zeros(nAzel, nK);
+            seg_Gm = zeros(nAzel, nK);
+        end
+        for idir=1:nAzel
+            az = azel_rad(idir,1);
+            sin_az = sin(az); 
+            cos_az = cos(az);
+            el = azel_rad(idir,2);
+            cos_el = cos(el);
+            sin_el = sin(el);
+            nx = cos_az * cos_el; % Unit Direction Vector n_hat
+            ny = sin_az * cos_el; % Unit Direction Vector n_hat
+            nz = sin_el; % Unit Direction Vector n_hat
+            if S.bc==3
+                ntemp=rotmat*[nx;ny;nz];
+                nx=ntemp(1);
+                ny=ntemp(2);
+                nz=ntemp(3);
+            end            
+            for k_idx = 1:nK
+                k_val = k_mags(k_idx);
+                qx = k_val * nx; % 3D q-vector
+                qy = k_val * ny; % 3D q-vector
+                qz = k_val * nz; % 3D q-vector
+                
+                % -- STATIC S(k) --
+                % Use wrapped coords (pt)
+                px = squeeze(spt{irep,1}(:,1,:)); 
+                py = squeeze(spt{irep,1}(:,2,:)); 
+                pz = squeeze(spt{irep,1}(:,3,:));
+                
+                % Dot product q*r
+                phase = -(qx.*px + qy.*py + qz.*pz);
+                E = exp(1i * phase);
+                
+                % Standard
+                rho_stat = sum(E, 1);
+                seg_S(idir, k_idx) = mean(abs(rho_stat).^2) / N;
+                
+                if S.bc == 2 || S.bc==3
+                    rho_mask = sum(mask{irep,1} .* E, 1);
+                    seg_Sm(idir, k_idx) = mean(abs(rho_mask).^2) / N_eff{irep,1};
+                end
+    
+                % -- DYNAMICS Deff(k) --
+                % Use unwrapped coords (put)
+                if S.bc~=1
+                    pux = squeeze(sput{irep,1}(:,1,:));
+                    puy = squeeze(sput{irep,1}(:,2,:));
+                    puz = squeeze(sput{irep,1}(:,3,:));
+                else
+                    pux = squeeze(spt{irep,1}(:,1,:));
+                    puy = squeeze(spt{irep,1}(:,2,:));
+                    puz = squeeze(spt{irep,1}(:,3,:));
+                end
+                
+                phase_dyn = -(qx.*pux + qy.*puy + qz.*puz);
+                E_dyn = exp(1i * phase_dyn);
+                rho_dyn = sum(E_dyn, 1);
+                [F_curve, ~] = compute_acf(rho_dyn, max_lag);
+                [D_val, G_val] = fit_dynamics(F_curve, S.timestep, k_val);
+                
+                seg_D(idir, k_idx) = D_val;
+                seg_G(idir, k_idx) = G_val;
+                F_AVG_STD(idir, k_idx, :) = F_AVG_STD(idir, k_idx, :) + reshape((F_curve), 1, 1, []);
+                
+                if S.bc == 2 || S.bc==3
+                    rho_dyn_m = sum(mask{irep,1} .* E_dyn, 1);
+                    [F_curve_m, ~] = compute_acf(rho_dyn_m, max_lag);
+                    [D_m, G_m] = fit_dynamics(F_curve_m, S.timestep, k_val);
+                    seg_Dm(idir, k_idx) = D_m;
+                    seg_Gm(idir, k_idx) = G_m;
+                    F_AVG_MASK(idir, k_idx, :) = F_AVG_MASK(idir, k_idx, :) + reshape(single(F_curve_m), 1, 1, []);
+                end
+    
+                disp([irep,idir, k_idx])
+            end
+        end
+        % Store segment
+        FSTD(:,:,:,irep)=F_AVG_STD;
+        SSTD(:,:,irep) = seg_S;
+        DEFFSTD(:,:,irep) = seg_D;
+        GAMMASTD(:,:,irep) = seg_G;
+        if S.bc == 2 || S.bc==3
+            FMASK(:,:,:,irep)=F_AVG_MASK;
+            SMASK(:,:,irep) = seg_Sm;
+            DEFFMASK(:,:,irep) = seg_Dm;
+            GAMMAMASK(:,:,irep) = seg_Gm;
+        end
     end
+    
+    % cleanup
+    clear sp* phase* pt pu* px py pz seg_* F_AVG_*
+    
+    % test=mean(DEFFSTD,4);
+    % test0el=squeeze(test(:,10,:));
+    % az_full = [az_rad; az_rad + pi;2*pi];
+    % [AZ_GRID, K_GRID] = meshgrid(rad2deg(az_full),k_mags);
+    % test0el_full = [test0el; test0el;test0el(1,:)];
+    % test0el_full=test0el_full';
+    % OriginData=[AZ_GRID(:),K_GRID(:),test0el_full(:)];
 end
 
-% cleanup
-clear sp* phase* pt pu* px py pz seg_* F_AVG_*
+%% --- VAN HOVE CORRELATION FUNCTION --------------------------------------------
 
-% test=mean(DEFFSTD,4);
-% test0el=squeeze(test(:,10,:));
-% az_full = [az_rad; az_rad + pi;2*pi];
-% [AZ_GRID, K_GRID] = meshgrid(rad2deg(az_full),k_mags);
-% test0el_full = [test0el; test0el;test0el(1,:)];
-% test0el_full=test0el_full';
-% OriginData=[AZ_GRID(:),K_GRID(:),test0el_full(:)];
+if dovanthove
+
+    % --- NON_GAUSSIAN PARAMETER
+    
+    % Setup
+    % Assuming 'data' is your 1x10 cell array containing Nx3xT matrices
+    % 'dt' is your timestep (e.g., 200 * tau)
+    
+    n_cells = length(sput);
+    [alphaN, alphadim, n_steps] = size(sput{1});
+    
+    % Define maximum lag time (e.g., 10% of trajectory or until statistics get poor)
+    % If n_steps is huge (10^6), restrict this to the relevant timescale (e.g., 5000 frames)
+    max_tau = 100; 
+    
+    % Initialize accumulators for moments
+    alphasum_r2 = zeros(max_tau, 1);
+    alphasum_r4 = zeros(max_tau, 1);
+    N_samples = zeros(max_tau, 1); % To track number of samples per lag
+    
+    % Calculation Loop
+    fprintf('Computing Alpha2...\n');
+    
+    for alphac = 1:n_cells
+        traj = sput{alphac}; % Get trajectory from cell (must be UNWRAPPED)
+        
+        % Loop over lag times tau
+        % (We vectorize the calculation over all start times t0 for speed)
+        for tau = 1:max_tau
+            
+            % 1. Compute displacements for this lag tau
+            % delta_r will be size: [N, 3, (n_steps - tau)]
+            % This effectively uses ALL valid starting times t0
+            delta_r = traj(:, :, 1+tau:end) - traj(:, :, 1:end-tau);
+            
+            % 2. Compute Squared Displacement (r^2) per particle per window
+            % Sum over dimension 2 (x, y, z)
+            dr2 = sum(delta_r.^2, 2); 
+            
+            % Flatten to a vector (collapses N particles and all t0 windows)
+            dr2_vec = dr2(:);
+            
+            % 3. Accumulate Moments
+            alphasum_r2(tau) = alphasum_r2(tau) + sum(dr2_vec);
+            alphasum_r4(tau) = alphasum_r4(tau) + sum(dr2_vec.^2);
+            N_samples(tau) = N_samples(tau) + length(dr2_vec);
+            disp([alphac,tau])
+        end
+    
+        fprintf('Processed Cell %d/%d\n', alphac, n_cells);
+    end
+    
+    % Final Compute
+    % Average Moments FIRST
+    M2 = alphasum_r2 ./ N_samples; % Mean Squared Displacement <r^2>
+    M4 = alphasum_r4 ./ N_samples; % Mean Quartic Displacement <r^4>
+    
+    % Calculate Alpha2 (3D formula)
+    % alpha2 = (3 * <r^4>) / (5 * <r^2>^2) - 1
+    alpha2 = (3 .* M4) ./ (5 .* M2.^2) - 1;
+    
+    % Plotting
+    time_axis = (1:max_tau); % Multiply by your actual dt if needed
+    
+    figure;
+    plot(time_axis, alpha2, 'LineWidth', 2, 'Color', 'w'); % White line for black bg
+    set(gca, 'Color', 'k', 'XColor', 'w', 'YColor', 'w', 'LineWidth', 2, 'FontSize', 14);
+    xlabel('Time (steps)');
+    ylabel('\alpha_2(t)');
+    title('Non-Gaussian Parameter (Smoothed)');
+    grid on;
+    
+    % Find the peak (Cage Breaking Time)
+    [max_val, idx] = max(alpha2);
+    t_star = time_axis(idx);
+    xline(t_star, '--r', 'Cage Breaking t*', 'LineWidth', 2);
+    
+    % ---
+    % Setup
+    % Use the t_star you found (approx 22 steps based on your plot)
+    target_tau = t_star; 
+    
+    % Accumulate all displacements dx, dy, dz for this specific lag
+    all_dx = [];
+    all_dy = [];
+    all_dz = [];
+    
+    fprintf('Collecting displacements at tau = %d...\n', target_tau);
+    
+    for c = 1:n_cells
+        traj = sput{c}; % Must be UNWRAPPED and COM-corrected
+        
+        % Calculate displacement for ALL windows of length target_tau
+        % Vectorized for speed
+        delta_r = traj(:, :, 1+target_tau:end) - traj(:, :, 1:end-target_tau);
+        
+        % Flatten and append
+        all_dx = [all_dx; reshape(delta_r(:,1,:), [], 1)];
+        all_dy = [all_dy; reshape(delta_r(:,2,:), [], 1)];
+        all_dz = [all_dz; reshape(delta_r(:,3,:), [], 1)];
+    end
+    
+    % Plotting the 2D Heatmap (XY Plane)
+    figure('Color', 'k');
+    
+    % 2D Histogram parameters
+    bin_edges = linspace(-3, 3, 100); % Adjust range based on your particle size (sigma)
+    
+    % Compute 2D histogram
+    h = histogram2(all_dx, all_dy, bin_edges, bin_edges, 'DisplayStyle', 'tile', 'ShowEmptyBins', 'on');
+    
+    % Visual Styling for "The Kill Shot"
+    colormap(hot); % 'hot' or 'parula' work well on black
+    axis equal;
+    set(gca, 'Color', 'k', 'XColor', 'w', 'YColor', 'w', 'LineWidth', 3, 'FontSize', 14, 'FontWeight', 'bold');
+    xlabel('\Delta x', 'Color', 'w', 'FontWeight', 'bold');
+    ylabel('\Delta y', 'Color', 'w', 'FontWeight', 'bold');
+    title(['Cage Breaking Geometry at t^* = ' num2str(target_tau)], 'Color', 'w', 'FontWeight', 'bold');
+    colorbar('Color', 'w', 'LineWidth', 3, 'FontWeight', 'bold');
+    
+    % Quantitative Cuts: Axis vs Diagonal
+    % Define width of the slice (how thick is our "line")
+    slice_width = bin_edges(2) - bin_edges(1);
+    
+    % 1. Cut along X-axis (where dy is near 0)
+    % Find indices where dy is within +/- 1 bin of 0
+    axis_mask = abs(all_dy) < slice_width;
+    axis_vals = abs(all_dx(axis_mask));
+    
+    % 2. Cut along Diagonal (where |dx| approx |dy|)
+    % Find indices where |abs(dx) - abs(dy)| is small
+    diag_mask = abs(abs(all_dx) - abs(all_dy)) < slice_width;
+    diag_vals = sqrt(all_dx(diag_mask).^2 + all_dy(diag_mask).^2); % Radial distance
+    
+    % Binning for 1D plot
+    r_edges = linspace(0, limit, 50);
+    [counts_axis, ~] = histcounts(axis_vals, r_edges, 'Normalization', 'pdf');
+    [counts_diag, ~] = histcounts(diag_vals, r_edges, 'Normalization', 'pdf');
+    r_centers = r_edges(1:end-1) + diff(r_edges)/2;
+    
+    % Plot Comparison
+    figure('Color', 'k');
+    semilogy(r_centers, counts_axis, 'r-', 'LineWidth', 3, 'DisplayName', 'Axis (0 deg)');
+    hold on;
+    semilogy(r_centers, counts_diag, 'b-', 'LineWidth', 3, 'DisplayName', 'Diagonal (45 deg)');
+    legend('TextColor', 'w', 'Color', 'none', 'FontSize', 14, 'FontWeight', 'bold');
+    
+    set(gca, 'Color', 'k', 'XColor', 'w', 'YColor', 'w', 'LineWidth', 3, 'FontSize', 14, 'FontWeight', 'bold');
+    xlabel('Displacement Distance r', 'Color', 'w', 'FontWeight', 'bold');
+    ylabel('Probability P(r)', 'Color', 'w', 'FontWeight', 'bold');
+    title('Directional Probability Decay', 'Color', 'w', 'FontWeight', 'bold');
+    grid on;
+end
 
 %% --- THERMALIZATION ANALYSIS --------------------------------------------------
 
