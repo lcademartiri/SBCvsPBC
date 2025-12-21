@@ -6,7 +6,7 @@ clc
 
 %% DATA SELECTION
 
-ic=25;
+ic=27;
 filenameseries='SBCvsPBC_fixedPOT_%d.mat';
 filenameseriesdata='SBCvsPBC_fixedPOT_%d_DATA.mat';
 
@@ -101,7 +101,7 @@ end
 k_fundamental = 2*pi/(2*S.br);
 k_max=pi/S.rp;
 k_mags=(k_fundamental:k_fundamental:k_max)';
-k_mags=sort([k_mags;k_fundamental.*[0.5;sqrt(2);sqrt(3);pi]]);
+k_mags=sort([k_mags;k_fundamental.*[sqrt(2);sqrt(3);pi]]);
 nK = length(k_mags);
 
 % AZIMUTH-WINDOW
