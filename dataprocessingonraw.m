@@ -7,8 +7,8 @@ clc
 %% DATA SELECTION
 
 ic=25;
-filenameseries='SBCvsPBC_%d.mat';
-filenameseriesdata='SBCvsPBC_%d_DATA.mat';
+filenameseries='SBCvsPBC_fixedPOT_%d.mat';
+filenameseriesdata='SBCvsPBC_fixedPOT_%d_DATA.mat';
 
 %% FLAGS
 plottingenabled=true;
@@ -105,12 +105,12 @@ k_mags=sort([k_mags;k_fundamental.*[0.5;sqrt(2);sqrt(3);pi]]);
 nK = length(k_mags);
 
 % AZIMUTH-WINDOW
-az_deg = (0:10:170)';
+az_deg = (0:1:170)';
 az_rad = deg2rad(az_deg); 
 nAz = length(az_rad);
 
 % ELEVATION-WINDOW
-el_deg = (-90:10:90)';
+el_deg = 0;
 el_rad = deg2rad(el_deg); 
 nEl = length(el_rad);
 
@@ -516,115 +516,81 @@ clear PDFT STD_MMEAN* MMEAN* AZ EL RHO AZS ELS
 colls=EDGES{ic,1};
 clear EDGES
 colls(colls(:,1)==0,:)=[]; % eliminate filler
-
-for ii=1:S.N
-    idxii=sum(colls(:,2:3)==ii,2)>0;
-    PPARTCOLLS{ii,1}=colls(idxii,:);
-    for iii=ii+1:S.N
-        idxiii=(colls(:,2)==ii & colls(:,3)==iii) | (colls(:,3)==ii & colls(:,2)==iii);
-        PPAIRCOLLS{ii,iii}=colls(idxiii,:);
+idmap=uint32(zeros(2*S.N,2*S.N));
+q=1;
+for i1=1:2*S.N
+    for i2=i1:2*S.N
+        idmap(i1,i2)=q;
+        idmap(i2,i1)=q;
+        q=q+1;
     end
-    disp(ii)
 end
-
-
-idxswap=colls(:,3)<colls(:,2); % make it so ID of first collider < ID of second
-colls(idxswap,[2 3])=colls(idxswap,[3 2]);
-colls=sortrows(colls,[2 1],"ascend"); % sort list of collisions by first collider ID and then step#
-ds=zeros(size(colls,1)-1,1); % initialize ds
-% loop grabbing all collisions associated with one particle
-q=1;
-[~,b]=ismember((1:S.N)',colls(:,2));
-for ib=1:size(b,1)-1
-    xmin=b(ib);
-    xmax=b(ib+1)-1;
-    s=colls(xmin:xmax,1);
-    ds(q:q+xmax-xmin-1,1)=diff(s);
-    q=xmax+1;
-    disp(ib)
-end
-ds(ds==0,:)=[];
-wtppart.edges=(1:max(ds))';
-[wtppart.counts,wtppart.edges]=histcounts(ds,wtppart.edges);
-wtppart.dist=[wtppart.edges(1:end-1,1),wtppart.counts',wtppart.counts'./sum(wtppart.counts)];
-wtppart.dist(wtppart.dist(:,2)==0,:)=[];
-if plottingenabled==1
-    figure
-    plot(wtppart.dist(:,1),wtppart.dist(:,3))
-    xscale log
-    yscale log
-end
-% ----------------------
-% --- per pair ---
-ds=zeros(size(colls,1)-1,1);
-q=1;
+PPAIR=cell(q-1,1);
+clear i1 i2
 ncolls=size(colls,1);
-colls=sortrows(colls,[2,3,1]);
-qds=1;
-while true
-    coll1=colls(q,2);
-    coll2=colls(q,3);
-    qs=q+1;
-    while qs>0
-        if qs>ncolls
-            qs=qs-1;
-            s=colls(q:qs,1);
-            ds(qds:qds+numel(s)-2,1)=diff(s);
-            break
-        end
-        if colls(qs,3)==coll2
-            if colls(qs,2)==coll1
-                qs=qs+1;                   
-            else
-                qs=-qs;
-            end
-        else
-            qs=-qs;
-        end
+for i0=1:ncolls
+    colls(i0,2)=idmap(colls(i0,2),colls(i0,3));
+end
+colls(:,3)=[];
+colls=sortrows(colls, [2 1]);
+idswitch=diff(colls(:,2))~=0;
+switches=find(idswitch);
+startend=[1,switches(1);switches+1,[switches(2:end,1);ncolls]];
+npairs=size(startend,1);
+for i0=1:npairs
+    pairid=colls(startend(i0,1),2);
+    PPAIR{pairid,1}=colls(startend(i0,1):startend(i0,2),1);
+end
+clear colls idswitch startend switches
+%
+ds=[];
+dspp=[];
+ccpp=[];
+qdspp=1;
+qccpp=1;
+for in=1:S.N
+    cells=idmap(:,in);
+    ds=diff(sort(vertcat(PPAIR{cells})));
+    cells=idmap(1:S.N,in);
+    ncells=numel(cells);
+    dspp=nan(numel(ds),1);
+    ccpp=nan(numel(ds),1);
+    qdspp=1;
+    qccpp=1;
+    for icell=1:ncells
+        dstemp=diff(PPAIR{cells(icell)});
+        dspp(qdspp:qdspp-2+numel(PPAIR{cells(icell)}),1)=dstemp;
+        dstemp=(dstemp==1);
+        dstemp=regionprops(dstemp,'Area');
+        dstemp=[dstemp.Area]';
+        ccpp(qccpp:qccpp-1+numel(dstemp),1)=dstemp;
     end
-    if qs~=ncolls
-        qs=-qs-1;
-        s=colls(q:qs,1);
-        ds(qds:qds+numel(s)-2,1)=diff(s);
-        qds=qds+numel(s)-1;
-    end
-    q=qs+1;
-    if q>ncolls
-        break
-    end
+    DSPP{in,1}=dspp;
+    CCPP{in,1}=ccpp;
+    DS{in,1}=ds;
+    disp(in)
+end
+DSPP=vertcat(DSPP{:});
+DS=vertcat(DS{:});
+CCPP=vertcat(CCPP{:});
 
-end
-ds(ds==0,:)=[];
-wtppair.edges=(1:max(ds))';
-[wtppair.counts,wtppair.edges]=histcounts(ds,wtppair.edges);
-wtppair.dist=[wtppair.edges(1:end-1,1),wtppair.counts',wtppair.counts'./sum(wtppair.counts)];
-wtppair.dist(wtppair.dist(:,2)==0,:)=[];
-if plottingenabled==1
-    figure
-    plot(wtppair.dist(:,1),wtppair.dist(:,3))
-    xscale log
-    yscale log
-end
-% ----------------------
-
-% --- CONSECUTIVE COLLISION ANALYSIS ----
-ds(ds~=1,:)=0;
-ds=logical(ds);
-d = diff([0, ds(:)', 0]);
-startIndex = find(d == 1);
-endIndex   = find(d == -1);
-runLengths = endIndex - startIndex;
-cc.edges=(1:max(runLengths))';
-[cc.counts,cc.edges]=histcounts(runLengths,cc.edges);
-cc.dist=[cc.edges(1:end-1,1),cc.counts',cc.counts'./sum(cc.counts)];
-cc.dist(cc.dist(:,2)==0,:)=[];
-if plottingenabled==1
-    figure
-    plot(cc.dist(:,1),cc.dist(:,3))
-    xscale log
-    yscale log
-end
-% --------------------------------------------------------------
+perparte=(0:max(DS))';
+perpaire=(0:max(DSPP))';
+perpaircce=(0:max(CCPP))';
+clear dspp
+clear ds
+[perpartc,perparte]=histcounts(DS,perparte);
+perpart=double([perparte(1:end-1,1),perpartc']);
+perpart(:,3)=perpart(:,2)./sum(perpart(:,2));
+[perpairc,perpaire]=histcounts(DSPP,perpaire);
+perpair=double([perpaire(1:end-1,1),perpairc']);
+perpair(:,3)=perpair(:,2)./sum(perpair(:,2));
+[perpairccc,perpaircce]=histcounts(CCPP,perpaircce);
+perpaircc=double([perpaircce(1:end-1,1),perpairccc']);
+perpaircc(:,3)=perpaircc(:,2)./sum(perpaircc(:,2));
+perpart(perpart(:,2)==0,:)=[];
+perpair(perpair(:,2)==0,:)=[];
+perpaircc(perpaircc(:,2)==0,:)=[];
 
 %% COMPILING DATA
 
@@ -652,9 +618,9 @@ if S.bc==2 || S.bc==3
     ISO(ic).DEFFm=DEFFMASK;
     ISO(ic).GAMMAm=GAMMAMASK;
 end
-ISO(ic).WT.ppart=wtppart;
-ISO(ic).WT.ppair=wtppair;
-ISO(ic).CC=cc;
+ISO(ic).WT.ppart=perpart;
+ISO(ic).WT.ppair=perpair;
+ISO(ic).CC=perpaircc;
 
 filenamedata=sprintf(filenameseriesdata,ic);
 save([output_folder,'\',filenamedata],'ISO','-v7.3');

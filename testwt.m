@@ -23,9 +23,9 @@ addpath(toolbox_folder)
 addpath(output_folder)
 
 
-load('SBCvsPBC_25.mat');
+load('SBCvsPBC_fixedPOT_27.mat');
 clear POS PDF PDFT SSF POS
-colls=EDGES{25,1};
+colls=EDGES{27,1};
 colls(colls(:,1)==0,:)=[];
 clear EDGES
 idmap=uint32(zeros(2*S.N,2*S.N));
