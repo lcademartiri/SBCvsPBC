@@ -6,9 +6,9 @@ clc
 
 %% DATA SELECTION
 
-ic=27;
-filenameseries='SBCvsPBC_fixedPOT_%d.mat';
-filenameseriesdata='SBCvsPBC_fixedPOT_%d_DATA.mat';
+ic=25;
+filenameseries='SBCvsPBC_%d.mat';
+filenameseriesdata='SBCvsPBC_%d_DATA.mat';
 
 %% FLAGS
 plottingenabled=true;
@@ -114,44 +114,45 @@ equator(end,:)=[];
 equator(1,2)=0;
 azel_rad=[azel;equator];
 azel_deg=rad2deg(azel_rad);
+nAzel=size(azel_rad,1);
 clear az el equator azel
-
-% AZIMUTH-WINDOW
-az_deg = (0:1:170)';
-az_rad = deg2rad(az_deg); 
-nAz = length(az_rad);
-
-% ELEVATION-WINDOW
-el_deg = 0;
-el_rad = deg2rad(el_deg); 
-nEl = length(el_rad);
+% 
+% % AZIMUTH-WINDOW
+% az_deg = (0:1:170)';
+% az_rad = deg2rad(az_deg); 
+% nAz = length(az_rad);
+% 
+% % ELEVATION-WINDOW
+% el_deg = 0;
+% el_rad = deg2rad(el_deg); 
+% nEl = length(el_rad);
 
 % DYNAMICS
 max_lag = T_steps/100; 
 
 % OUTPUT ARRAY INITIALIZATION
 % output arrays containing the means across replicates
-S_std = zeros(nAz, nEl, nK);  
-S_mask = zeros(nAz, nEl, nK); 
-Deff_std = zeros(nAz, nEl, nK);
-Deff_mask = zeros(nAz, nEl, nK);
+S_std = zeros(nAzel, nK);  
+S_mask = zeros(nAzel, nK); 
+Deff_std = zeros(nAzel, nK);
+Deff_mask = zeros(nAzel, nK);
 
 % Scalar Maps (Keep Replicates for Error Bars)
     % Dimensions: Theta x Phi x K x Replicates
-SSTD      = zeros(nAz, nEl, nK, 10);
-DEFFSTD   = zeros(nAz, nEl, nK, 10);
-GAMMASTD  = zeros(nAz, nEl, nK, 10);
+SSTD      = zeros(nAzel, nK, 10);
+DEFFSTD   = zeros(nAzel, nK, 10);
+GAMMASTD  = zeros(nAzel, nK, 10);
 
 % Full Time Correlation Function (Average Only)
 % Dimensions: Theta x Phi x K x Time
 % Using 'single' to save 50% RAM
-F_AVG_STD = zeros(nAz, nEl, nK, max_lag+1);
+F_AVG_STD = zeros(nAzel, nK, max_lag+1);
 
 if S.bc == 2 || S.bc==3
-    SMASK     = zeros(nAz, nEl, nK, 10);
-    DEFFMASK  = zeros(nAz, nEl, nK, 10);
-    GAMMAMASK = zeros(nAz, nEl, nK, 10);
-    F_AVG_MASK= zeros(nAz, nEl, nK, max_lag+1);
+    SMASK     = zeros(nAzel, nK, 10);
+    DEFFMASK  = zeros(nAzel, nK, 10);
+    GAMMAMASK = zeros(nAzel, nK, 10);
+    F_AVG_MASK= zeros(nAzel, nK, max_lag+1);
 end
 
 %% MASK
@@ -183,107 +184,100 @@ end
 %% SUPERLOOP
 for irep=1:10
     % initialize replicate storage
-    seg_S = zeros(nAz, nEl, nK);
-    seg_D = zeros(nAz, nEl, nK);
-    seg_G = zeros(nAz, nEl, nK);
+    seg_S = zeros(nAzel, nK);
+    seg_D = zeros(nAzel, nK);
+    seg_G = zeros(nAzel, nK);
     if S.bc==2 || S.bc==3
-        seg_Sm = zeros(nAz, nEl, nK);
-        seg_Dm = zeros(nAz, nEl, nK);
-        seg_Gm = zeros(nAz, nEl, nK);
+        seg_Sm = zeros(nAzel, nK);
+        seg_Dm = zeros(nAzel, nK);
+        seg_Gm = zeros(nAzel, nK);
     end
-
-    for az_idx = 1:nAz
-        az = az_rad(az_idx);
+    for idir=1:nAzel
+        az = azel_rad(idir,1);
         sin_az = sin(az); 
         cos_az = cos(az);
-        
-        for el_idx = 1:nEl
-            el = el_rad(el_idx);
-            cos_el = cos(el);
-            sin_el = sin(el);
-            nx = cos_az * cos_el; % Unit Direction Vector n_hat
-            ny = sin_az * cos_el; % Unit Direction Vector n_hat
-            nz = sin_el; % Unit Direction Vector n_hat
-            if S.bc==3
-                ntemp=rotmat*[nx;ny;nz];
-                nx=ntemp(1);
-                ny=ntemp(2);
-                nz=ntemp(3);
-            end
-            
-            for k_idx = 1:nK
-                k_val = k_mags(k_idx);
-                qx = k_val * nx; % 3D q-vector
-                qy = k_val * ny; % 3D q-vector
-                qz = k_val * nz; % 3D q-vector
+        el = azel_rad(idir,2);
+        cos_el = cos(el);
+        sin_el = sin(el);
+        nx = cos_az * cos_el; % Unit Direction Vector n_hat
+        ny = sin_az * cos_el; % Unit Direction Vector n_hat
+        nz = sin_el; % Unit Direction Vector n_hat
+        if S.bc==3
+            ntemp=rotmat*[nx;ny;nz];
+            nx=ntemp(1);
+            ny=ntemp(2);
+            nz=ntemp(3);
+        end            
+        for k_idx = 1:nK
+            k_val = k_mags(k_idx);
+            qx = k_val * nx; % 3D q-vector
+            qy = k_val * ny; % 3D q-vector
+            qz = k_val * nz; % 3D q-vector
 
             
-                % -- STATIC S(k) --
-                % Use wrapped coords (pt)
-                px = squeeze(spt{irep,1}(:,1,:)); 
-                py = squeeze(spt{irep,1}(:,2,:)); 
-                pz = squeeze(spt{irep,1}(:,3,:));
-                
-                % Dot product q*r
-                phase = -(qx.*px + qy.*py + qz.*pz);
-                E = exp(1i * phase);
-                
-                % Standard
-                rho_stat = sum(E, 1);
-                seg_S(az_idx, el_idx, k_idx) = mean(abs(rho_stat).^2) / N;
-                
-                if S.bc == 2 || S.bc==3
-                    rho_mask = sum(mask{irep,1} .* E, 1);
-                    seg_Sm(az_idx, el_idx, k_idx) = mean(abs(rho_mask).^2) / N_eff{irep,1};
-                end
-
-                % -- DYNAMICS Deff(k) --
-                % Use unwrapped coords (put)
-                if S.bc~=1
-                    pux = squeeze(sput{irep,1}(:,1,:));
-                    puy = squeeze(sput{irep,1}(:,2,:));
-                    puz = squeeze(sput{irep,1}(:,3,:));
-                else
-                    pux = squeeze(spt{irep,1}(:,1,:));
-                    puy = squeeze(spt{irep,1}(:,2,:));
-                    puz = squeeze(spt{irep,1}(:,3,:));
-                end
-                
-                phase_dyn = -(qx.*pux + qy.*puy + qz.*puz);
-                E_dyn = exp(1i * phase_dyn);
-                rho_dyn = sum(E_dyn, 1);
-                [F_curve, ~] = compute_acf(rho_dyn, max_lag);
-                [D_val, G_val] = fit_dynamics(F_curve, S.timestep, k_val);
-                
-                seg_D(az_idx, el_idx, k_idx) = D_val;
-                seg_G(az_idx, el_idx, k_idx) = G_val;
-                F_AVG_STD(az_idx, el_idx, k_idx, :) = F_AVG_STD(az_idx, el_idx, k_idx, :) + reshape((F_curve), 1, 1, 1, []);
-                
-                %seg_D(az_idx, el_idx, k_idx) = get_deff(rho_dyn, max_lag, S.timestep, k_val);
-                if S.bc == 2 || S.bc==3
-                    rho_dyn_m = sum(mask{irep,1} .* E_dyn, 1);
-                    [F_curve_m, ~] = compute_acf(rho_dyn_m, max_lag);
-                    [D_m, G_m] = fit_dynamics(F_curve_m, S.timestep, k_val);
-                    seg_Dm(az_idx, el_idx, k_idx) = D_m;
-                    seg_Gm(az_idx, el_idx, k_idx) = G_m;
-                    F_AVG_MASK(az_idx, el_idx, k_idx, :) = F_AVG_MASK(az_idx, el_idx, k_idx, :) + reshape(single(F_curve_m), 1, 1, 1, []);
-                    %seg_Dm(az_idx, el_idx, k_idx) = get_deff(rho_dyn_m, max_lag, S.timestep, k_val);
-                end
-
-                disp([irep,az_idx, el_idx, k_idx])
+            % -- STATIC S(k) --
+            % Use wrapped coords (pt)
+            px = squeeze(spt{irep,1}(:,1,:)); 
+            py = squeeze(spt{irep,1}(:,2,:)); 
+            pz = squeeze(spt{irep,1}(:,3,:));
+            
+            % Dot product q*r
+            phase = -(qx.*px + qy.*py + qz.*pz);
+            E = exp(1i * phase);
+            
+            % Standard
+            rho_stat = sum(E, 1);
+            seg_S(idir, k_idx) = mean(abs(rho_stat).^2) / N;
+            
+            if S.bc == 2 || S.bc==3
+                rho_mask = sum(mask{irep,1} .* E, 1);
+                seg_Sm(idir, k_idx) = mean(abs(rho_mask).^2) / N_eff{irep,1};
             end
+
+            % -- DYNAMICS Deff(k) --
+            % Use unwrapped coords (put)
+            if S.bc~=1
+                pux = squeeze(sput{irep,1}(:,1,:));
+                puy = squeeze(sput{irep,1}(:,2,:));
+                puz = squeeze(sput{irep,1}(:,3,:));
+            else
+                pux = squeeze(spt{irep,1}(:,1,:));
+                puy = squeeze(spt{irep,1}(:,2,:));
+                puz = squeeze(spt{irep,1}(:,3,:));
+            end
+            
+            phase_dyn = -(qx.*pux + qy.*puy + qz.*puz);
+            E_dyn = exp(1i * phase_dyn);
+            rho_dyn = sum(E_dyn, 1);
+            [F_curve, ~] = compute_acf(rho_dyn, max_lag);
+            [D_val, G_val] = fit_dynamics(F_curve, S.timestep, k_val);
+            
+            seg_D(idir, k_idx) = D_val;
+            seg_G(idir, k_idx) = G_val;
+            F_AVG_STD(idir, k_idx, :) = F_AVG_STD(idir, k_idx, :) + reshape((F_curve), 1, 1, []);
+            
+            if S.bc == 2 || S.bc==3
+                rho_dyn_m = sum(mask{irep,1} .* E_dyn, 1);
+                [F_curve_m, ~] = compute_acf(rho_dyn_m, max_lag);
+                [D_m, G_m] = fit_dynamics(F_curve_m, S.timestep, k_val);
+                seg_Dm(idir, k_idx) = D_m;
+                seg_Gm(idir, k_idx) = G_m;
+                F_AVG_MASK(idir, k_idx, :) = F_AVG_MASK(idir, k_idx, :) + reshape(single(F_curve_m), 1, 1, []);
+            end
+
+            disp([irep,idir, k_idx])
         end
     end
     % Store segment
-    FSTD(:,:,:,:,irep)=F_AVG_STD;
-    SSTD(:,:,:,irep) = seg_S;
-    DEFFSTD(:,:,:,irep) = seg_D;
-    GAMMASTD(:,:,:,irep) = seg_G;
+    FSTD(:,:,:,irep)=F_AVG_STD;
+    SSTD(:,:,irep) = seg_S;
+    DEFFSTD(:,:,irep) = seg_D;
+    GAMMASTD(:,:,irep) = seg_G;
     if S.bc == 2 || S.bc==3
-        FMASK(:,:,:,:,irep)=F_AVG_MASK;
-        SMASK(:,:,:,irep) = seg_Sm;
-        DEFFMASK(:,:,:,irep) = seg_Dm;
-        GAMMAMASK(:,:,:,irep) = seg_Gm;
+        FMASK(:,:,:,irep)=F_AVG_MASK;
+        SMASK(:,:,irep) = seg_Sm;
+        DEFFMASK(:,:,irep) = seg_Dm;
+        GAMMAMASK(:,:,irep) = seg_Gm;
     end
 end
 
