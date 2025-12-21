@@ -6,9 +6,9 @@ clc
 
 %% DATA SELECTION
 
-ic=25;
-filenameseries='SBCvsPBC_%d.mat';
-filenameseriesdata='SBCvsPBC_%d_DATA.mat';
+ic=27;
+filenameseries='SBCvsPBC_fixedPOT_%d.mat';
+filenameseriesdata='SBCvsPBC_fixedPOT_%d_DATA.mat';
 
 %% FLAGS
 plottingenabled=true;
