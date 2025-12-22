@@ -73,9 +73,9 @@ C.phasesproperties=phaseslibrary();
 V.solvent_list=[1]; % list of solvents according to the library above
 V.phase_list=[2]; % list of phases according to the library above
 V.r_range=[1e-08,1e-8,1,1]; % min, max, steps of particle radii, then log switch (1 if logscale)
-V.N_range=[1e3,1e5,3,1]; % min, max, steps of particle numbers, then log switch (1 if logscale)
-V.phi_range=[0.4,0.40,1,1]; % min, max, steps of volume fractions, then log switch (1 if logscale)
-V.bc_range=[1,3,3]; % min, max, steps of boundary conditions (1:SBC; 2:PBC_cubic; 3:PBC_fcc; 4:BB)
+V.N_range=[1e3,1e3,1,1]; % min, max, steps of particle numbers, then log switch (1 if logscale)
+V.phi_range=[1e-3,0.40,5,1]; % min, max, steps of volume fractions, then log switch (1 if logscale)
+V.bc_range=[1,1,1]; % min, max, steps of boundary conditions (1:SBC; 2:PBC_cubic; 3:PBC_fcc; 4:BB)
 V.bbm_range=[1,1,1]; % big box multiplier
 V.LJpot_range=[1,1,1]; % LJ potential trigger (0 = HS; 1 = LJ; 2 = WCA)
 V.T_range=[298.15,298.15,1]; % min, max, steps of temperatures
@@ -94,7 +94,7 @@ CONDS=effective_diffusivity(data_folder,CONDS,P,C);
 
 %% SIMULATION EXECUTION
 
-for ic=25
+for ic=5
 
     if CONDS.alpha(ic,1)==0
         continue
@@ -117,7 +117,7 @@ for ic=25
     S.kt=CONDS.kt(ic,1);
     S.bbm=CONDS.bbm(ic,1);
     S.potential=CONDS.pot(ic);
-    S.pot_corr=false;
+    S.pot_corr=true;
     if S.potential>0
         S.pot_epsilon=C.epsilon;
         S.pot_sigma=2*S.rp+C.hydrationlayer;
@@ -224,6 +224,7 @@ for ic=25
             if exist(filestartingconfiguration,'file')
                 load(filestartingconfiguration,'p','pgp')
             else
+                PDF=pdf_initialization(S,P,data_folder);
                 [p,pgp]=sbc_setup_sgd_v9(S,PDF,[],data_folder);
             end
             disp('initial particle configuration - determined')
@@ -453,10 +454,6 @@ for ic=25
                 disp({filename,ic,irep,log10(qs)})
             end
             % ---
-
-            
-            
-
         end
     end
     clear DATA
