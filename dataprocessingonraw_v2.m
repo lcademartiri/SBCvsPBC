@@ -489,7 +489,10 @@ end
         shellcenters=PDF.pdfedges{3}(1:end-1)+0.5*(PDF.pdfedges{3}(2)-PDF.pdfedges{3}(1));
         shellvolumes=(4/3)*pi*PDF.pdfedges{3}(2:end).^3-(4/3)*pi*PDF.pdfedges{3}(1:end-1).^3;
         ndens=S.N/S.bv;
-        gdenominator=ndens.*shellvolumes.*(S.N/2);
+		pdf_r_norm = shellcenters / S.br; % Geometric Form Factor - Normalize distance by Box Radius (S.br)
+		pdf_geom_factor = 1 - (3/4)*pdf_r_norm + (1/16)*pdf_r_norm.^3; % The Finite Volume Correction Polynomial
+		pdf_geom_factor = max(0, geom_factor); % Clamp negative values to 0
+        gdenominator=ndens.*shellvolumes.*pdf_geom_factor*(S.N/2);
     end
     % ---
     % --- determine the g
